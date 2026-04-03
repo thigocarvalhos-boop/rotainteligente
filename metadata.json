@@ -1,0 +1,9 @@
+{
+  "name": "Remix: ROTA — Inteligência Institucional",
+  "description": "Plataforma de gestão de ciclo completo de projetos com foco em compliance, antiglosa e governança institucional.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
