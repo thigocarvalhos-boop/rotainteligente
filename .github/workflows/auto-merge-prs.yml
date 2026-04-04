@@ -1,0 +1,35 @@
+name: Auto-merge Critical PRs
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_numbers:
+        description: 'PR numbers to merge (comma-separated)'
+        required: false
+        default: '1,2,3'
+
+jobs:
+  merge-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Merge PR #1 (railway.json)
+        run: gh pr merge 1 --merge --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge PR #2 (package.json)
+        run: gh pr merge 2 --merge --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge PR #3 (prisma/schema.prisma)
+        run: gh pr merge 3 --merge --delete-branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify merges
+        run: |
+          echo "✅ All PRs merged successfully!"
+          echo "Railway deployment will start automatically."
