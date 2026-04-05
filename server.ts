@@ -10,7 +10,6 @@ import { prisma } from "./src/lib/prisma";
 import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
 
-// ── Garante que as tabelas existem antes de qualquer coisa ─────────────────
 async function ensureDatabase(): Promise<void> {
   console.log("[DB] Verificando banco de dados...");
   try {
@@ -19,7 +18,6 @@ async function ensureDatabase(): Promise<void> {
   } catch {
     console.log("[DB] Tabelas não encontradas. Criando...");
     try {
-      // Usa o binário local do prisma — funciona com Node.js e Bun
       const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
       execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
         stdio: "inherit",
@@ -33,7 +31,6 @@ async function ensureDatabase(): Promise<void> {
   }
 }
 
-// Extend Express Request type
 declare global {
   namespace Express {
     interface Request {
@@ -79,7 +76,6 @@ async function startServer() {
     return sanitized;
   };
 
-  // Seed Initial Data
   const seedData = async () => {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
@@ -87,27 +83,21 @@ async function startServer() {
       return;
     }
 
-    if (process.env.NODE_ENV === "production") {
-      console.warn("SEED: ignorado em ambiente de produção. Execute manualmente via npm run seed.");
-      return;
-    }
-
     try {
       const adminEmail = "admin@guiasocial.org";
-      let admin = await prisma.user.findUnique({ where: { email: adminEmail } });
-      
-      if (!admin) {
-        const hashedPassword = await bcrypt.hash("admin123", 12);
-        admin = await prisma.user.create({
-          data: {
-            email: adminEmail,
-            password: hashedPassword,
-            name: "Administrador ROTA",
-            role: "SUPER_ADMIN"
-          }
-        });
-        console.log("Seed: Admin user created.");
-      }
+      const hashedPassword = await bcrypt.hash("admin123", 12);
+
+      const admin = await prisma.user.upsert({
+        where: { email: adminEmail },
+        update: {},
+        create: {
+          email: adminEmail,
+          password: hashedPassword,
+          name: "Administrador ROTA",
+          role: "SUPER_ADMIN"
+        }
+      });
+      console.log("Seed: Admin user OK —", admin.email);
 
       const projectCount = await prisma.project.count();
       if (projectCount === 0) {
@@ -163,14 +153,13 @@ async function startServer() {
         console.log("Seed: Initial project and alerts created.");
       }
     } catch (error) {
-      console.error("Seed: Erro ao popular dados iniciais. Verifique a conexão com o banco de dados.", error);
+      console.error("Seed: Erro ao popular dados iniciais.", error);
     }
   };
-  // Garante tabelas antes do seed
+
   await ensureDatabase();
   await seedData();
 
-  // Verificar expiração de documentos a cada hora
   const dbUrl = process.env.DATABASE_URL;
   if (dbUrl) {
     try {
@@ -181,8 +170,6 @@ async function startServer() {
     }
   }
 
-  // CORS — allows browser requests from any origin in development,
-  // tighten ALLOWED_ORIGIN in production via env var
   app.use((req: any, res: any, next: any) => {
     const origin = process.env.ALLOWED_ORIGIN || "*";
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -194,13 +181,11 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Logging Middleware
   app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
 
-  // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "Acesso negado" });
@@ -213,7 +198,6 @@ async function startServer() {
     }
   };
 
-  // RBAC Middleware
   const PERMISSIONS: Record<string, string[]> = {
     "expenses:create":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "FINANCEIRO"],
     "documents:create":  ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "DOCUMENTAL"],
@@ -237,12 +221,10 @@ async function startServer() {
     next();
   };
 
-  // API Routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Auth Endpoint
   app.post("/api/auth/login", [
     body("email").isEmail(),
     body("password").isLength({ min: 6 })
@@ -251,7 +233,6 @@ async function startServer() {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { email, password } = req.body;
-    
     try {
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) return res.status(401).json({ error: "Credenciais inválidas" });
@@ -269,7 +250,7 @@ async function startServer() {
         JWT_REFRESH_SECRET,
         { expiresIn: "7d" }
       );
-      
+
       await auditService.log({
         userId: user.id,
         acao: "LOGIN",
@@ -305,7 +286,6 @@ async function startServer() {
     }
   });
 
-  // Project Routes
   app.get("/api/projects", authenticate, async (req, res) => {
     try {
       const projects = await prisma.project.findMany({
@@ -384,7 +364,7 @@ async function startServer() {
   app.patch("/api/projects/:id/status", authenticate, can("projects:update"), async (req: any, res: any) => {
     const { id } = req.params;
     const { status, justificativa } = req.body;
-    
+
     const allowedStatus = ["Triagem", "Inscrito", "Em análise", "Aprovado", "Reprovado", "Em execução", "Concluído", "Cancelado"];
     if (!allowedStatus.includes(status)) {
       return res.status(400).json({ error: "Status inválido" });
@@ -407,10 +387,7 @@ async function startServer() {
       const currentLog = Array.isArray(existing.changeLog) ? existing.changeLog : [];
       const updated = await prisma.project.update({
         where: { id },
-        data: {
-          status,
-          changeLog: [...currentLog, logEntry]
-        }
+        data: { status, changeLog: [...currentLog, logEntry] }
       });
 
       await auditService.log({
@@ -452,25 +429,21 @@ async function startServer() {
     }
   });
 
-  // Expense Routes with Anti-glosa
   app.post("/api/expenses", authenticate, can("expenses:create"), async (req: any, res: any) => {
     const { projectId, descricao, valor, vincMetaId, vincEtapaId, cotacoes, data, categoria } = req.body;
-    
+
     try {
-      // 1. Basic Validation
       if (!vincMetaId || !vincEtapaId) {
         return res.status(400).json({ error: "Vínculo com Meta e Etapa é obrigatório para evitar glosa." });
       }
 
-      // 2. Economicity Check
       if (valor > 1000 && (!cotacoes || cotacoes.length < 3)) {
-        return res.status(400).json({ 
-          error: "Despesas acima de R$ 1.000,00 exigem no mínimo 3 cotações para conformidade institucional.",
+        return res.status(400).json({
+          error: "Despesas acima de R$ 1.000,00 exigem no mínimo 3 cotações.",
           actionRequired: "Anexar cotações faltantes"
         });
       }
 
-      // 3. Budget Validation
       const meta = await prisma.meta.findUnique({ where: { id: vincMetaId } });
       if (!meta) return res.status(404).json({ error: "Meta não encontrada" });
 
@@ -490,26 +463,20 @@ async function startServer() {
         return res.status(400).json({ error: "Saldo insuficiente na meta para esta despesa." });
       }
 
-      // 4. Schedule Validation
       const etapa = await prisma.etapa.findUnique({ where: { id: vincEtapaId } });
       if (!etapa) return res.status(404).json({ error: "Etapa não encontrada" });
-      
+
       const expenseDate = new Date(data);
       if (expenseDate < etapa.inicio || expenseDate > etapa.fim) {
         return res.status(400).json({ error: "Data da despesa fora do cronograma da etapa vinculada." });
       }
 
-      // 5. Persistence
       const expense = await prisma.expense.create({
         data: {
-          projectId,
-          descricao,
-          valor,
-          data: expenseDate,
-          categoria,
+          projectId, descricao, valor,
+          data: expenseDate, categoria,
           status: "VALIDADO",
-          vincMetaId,
-          vincEtapaId,
+          vincMetaId, vincEtapaId,
           cotacoes: {
             create: cotacoes?.map((c: any) => ({
               fornecedor: c.fornecedor,
@@ -537,7 +504,6 @@ async function startServer() {
     }
   });
 
-  // Document Routes
   app.post("/api/documents", authenticate, can("documents:create"), async (req: any, res: any) => {
     const { projectId, nome, validade, url } = req.body;
     try {
@@ -566,7 +532,6 @@ async function startServer() {
     }
   });
 
-  // Alerts Route
   app.get("/api/alerts", authenticate, can("alerts:read"), async (req: any, res: any) => {
     try {
       const isAdmin = ["SUPER_ADMIN", "DIRETORIA"].includes(req.user.role);
@@ -613,7 +578,6 @@ async function startServer() {
     }
   });
 
-  // Audit Logs Route
   app.get("/api/audit-logs", authenticate, can("audit-logs:read"), async (req, res) => {
     const logs = await prisma.auditLog.findMany({
       include: { user: true, project: true },
@@ -623,7 +587,6 @@ async function startServer() {
     res.json(logs);
   });
 
-  // Documents Route
   app.get("/api/documents", authenticate, async (req, res) => {
     const docs = await prisma.document.findMany({
       include: { project: true },
@@ -632,7 +595,6 @@ async function startServer() {
     res.json(docs);
   });
 
-  // Stats Route
   app.get("/api/stats", authenticate, can("stats:read"), async (req, res) => {
     const [totalProjects, approvedProjects, totalValue] = await Promise.all([
       prisma.project.count(),
@@ -648,7 +610,6 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },
