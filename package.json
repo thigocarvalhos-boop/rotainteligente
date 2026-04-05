@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "db:init": "tsx scripts/init-db.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
