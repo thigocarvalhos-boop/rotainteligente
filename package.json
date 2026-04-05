@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "deploy:prod": "node scripts/deploy.js"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
