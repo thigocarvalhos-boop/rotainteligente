@@ -8,6 +8,7 @@ import { body, validationResult } from "express-validator";
 import { prisma } from "./src/lib/prisma";
 import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
+import { initDatabase } from "./scripts/init-db";
 
 // Extend Express Request type
 declare global {
@@ -29,6 +30,21 @@ if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
 }
 
 async function startServer() {
+  // ── Inicialização do banco de dados ──────────────────────────────────────
+  // Em produção, garante que as tabelas existam e insere dados iniciais.
+  // Em desenvolvimento, o banco local (SQLite/Postgres) já deve estar pronto.
+  if (process.env.NODE_ENV === "production") {
+    try {
+      await initDatabase();
+    } catch (dbInitError) {
+      console.error(
+        "[server] ERRO CRÍTICO: falha ao inicializar o banco de dados. O servidor não será iniciado.",
+        dbInitError
+      );
+      process.exit(1);
+    }
+  }
+
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
 
@@ -55,7 +71,7 @@ async function startServer() {
     return sanitized;
   };
 
-  // Seed Initial Data
+  // Seed Initial Data (desenvolvimento apenas — produção é tratada por initDatabase)
   const seedData = async () => {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
@@ -64,7 +80,7 @@ async function startServer() {
     }
 
     if (process.env.NODE_ENV === "production") {
-      console.warn("SEED: ignorado em ambiente de produção. Execute manualmente via npm run seed.");
+      // Em produção o seed já foi executado por initDatabase() acima.
       return;
     }
 
