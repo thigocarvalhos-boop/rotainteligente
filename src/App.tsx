@@ -34,7 +34,11 @@ import {
   ShieldCheck,
   Info,
   RefreshCw,
-  Eye
+  Eye,
+  Plus,
+  X,
+  Upload,
+  Save
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { B, EDITAIS } from "./mockData";
@@ -315,7 +319,7 @@ function DashboardView({ projects, alerts, onNav, onProject }: { projects: Proje
   );
 }
 
-function PipelineView({ projects, onProject }: { projects: Project[]; onProject: (p: Project) => void }) {
+function PipelineView({ projects, onProject, onNewProject }: { projects: Project[]; onProject: (p: Project) => void; onNewProject: () => void }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("Todos");
 
@@ -335,6 +339,12 @@ function PipelineView({ projects, onProject }: { projects: Project[]; onProject:
           <p className="text-slate-500 text-sm">Gerenciamento completo do ciclo de vida</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={onNewProject}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+          >
+            <Plus className="w-4 h-4" /> Novo Projeto
+          </button>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input 
@@ -424,7 +434,12 @@ function PipelineView({ projects, onProject }: { projects: Project[]; onProject:
   );
 }
 
-function ProjectDetailView({ project, onBack }: { project: Project; onBack: () => void }) {
+function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus }: {
+  project: Project;
+  onBack: () => void;
+  onAddDoc: (projectId: string, projectName: string) => void;
+  onUpdateStatus: (project: Project) => void;
+}) {
   const [activeTab, setActiveTab] = useState("geral");
   
   const tabs = [
@@ -960,13 +975,12 @@ function ProjectDetailView({ project, onBack }: { project: Project; onBack: () =
           <Card title="Ações Rápidas">
             <div className="space-y-2">
               {[
-                { label: "Atualizar Status", icon: TrendingUp },
-                { label: "Adicionar Documento", icon: FileText },
-                { label: "Registrar Comentário", icon: History },
-                { label: "Ver Pasta Drive", icon: ExternalLink },
+                { label: "Atualizar Status", icon: TrendingUp, action: () => onUpdateStatus(project) },
+                { label: "Adicionar Documento", icon: FileText, action: () => onAddDoc(project.id, project.nome) },
               ].map(action => (
-                <button 
+                <button
                   key={action.label}
+                  onClick={action.action}
                   className="w-full flex items-center gap-3 p-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 hover:text-indigo-600 rounded-lg transition-all border border-transparent hover:border-slate-100"
                 >
                   <action.icon className="w-4 h-4" />
@@ -1155,7 +1169,7 @@ function AlertasView({ alerts }: { alerts: AlertType[] }) {
   );
 }
 
-function DocumentosView({ documents }: { documents: any[] }) {
+function DocumentosView({ documents, onNewDoc }: { documents: any[]; onNewDoc: () => void }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -1163,9 +1177,17 @@ function DocumentosView({ documents }: { documents: any[] }) {
           <h2 className="text-2xl font-bold text-slate-900 font-serif">Gestão Documental</h2>
           <p className="text-slate-500 text-sm">Biblioteca institucional e certidões</p>
         </div>
-        <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-indigo-200 flex items-center gap-2">
-          <Download className="w-4 h-4" /> Exportar Kit Documental
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={onNewDoc}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-xs font-bold uppercase tracking-widest shadow-lg shadow-indigo-200 flex items-center gap-2 hover:bg-indigo-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> Novo Documento
+          </button>
+          <button className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg text-xs font-bold uppercase tracking-widest flex items-center gap-2 hover:bg-slate-200 transition-colors">
+            <Download className="w-4 h-4" /> Exportar Kit
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -1356,6 +1378,314 @@ function RelatoriosView() {
   );
 }
 
+// ─── MODAL BASE ────────────────────────────────────────────────────────────
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.5)" }}>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-6 border-b border-slate-100">
+          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+          <button onClick={onClose} className="p-2 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── FORM FIELD ────────────────────────────────────────────────────────────
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div>
+      <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+        {label}{required && <span className="text-red-500 ml-0.5">*</span>}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all";
+const selectCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-all";
+
+// ─── MODAL NOVO PROJETO ────────────────────────────────────────────────────
+function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    nome: "", edital: "", financiador: "", area: "Digital",
+    valor: "", status: "Triagem", prazo: "", probabilidade: "50",
+    risco: "Médio", aderencia: "3", territorio: "", publico: "",
+    competitividade: "Média", proximoPasso: "", observacao: "",
+    categoriaEdital: "", programaInterno: "", ptScore: "7.0",
+  });
+
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async () => {
+    if (!form.nome || !form.financiador || !form.prazo || !form.valor) {
+      setError("Preencha os campos obrigatórios: Nome, Financiador, Valor e Prazo.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await apiClient.createProject({
+        ...form,
+        status: form.status as import("./types").ProjectStatus,
+        risco: form.risco as "Baixo" | "Médio" | "Alto",
+        valor: parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
+        probabilidade: parseInt(form.probabilidade),
+        aderencia: parseInt(form.aderencia),
+        ptScore: parseFloat(form.ptScore),
+      });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setError(e.message || "Erro ao salvar projeto.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title="Novo Projeto" onClose={onClose}>
+      <div className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2">
+            <Field label="Nome do Projeto" required>
+              <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)} placeholder="Ex: Guia Digital Teen 2026" />
+            </Field>
+          </div>
+          <Field label="Edital / Chamamento" required>
+            <input className={inputCls} value={form.edital} onChange={e => set("edital", e.target.value)} placeholder="Ex: FMCA/COMDICA 2026" />
+          </Field>
+          <Field label="Financiador" required>
+            <input className={inputCls} value={form.financiador} onChange={e => set("financiador", e.target.value)} placeholder="Ex: Fundo Municipal da Criança" />
+          </Field>
+          <Field label="Área Temática">
+            <select className={selectCls} value={form.area} onChange={e => set("area", e.target.value)}>
+              {["Digital","Primeira Infância","Saúde Mental / TEA","Esporte","Inclusão Produtiva","Segurança Alimentar","Direitos Humanos","Cultura","Educação","Outro"].map(a => <option key={a}>{a}</option>)}
+            </select>
+          </Field>
+          <Field label="Programa Interno">
+            <input className={inputCls} value={form.programaInterno} onChange={e => set("programaInterno", e.target.value)} placeholder="Ex: Inclusão Digital" />
+          </Field>
+          <Field label="Valor Solicitado (R$)" required>
+            <input className={inputCls} type="number" value={form.valor} onChange={e => set("valor", e.target.value)} placeholder="Ex: 320000" />
+          </Field>
+          <Field label="Prazo / Data Limite" required>
+            <input className={inputCls} type="date" value={form.prazo} onChange={e => set("prazo", e.target.value)} />
+          </Field>
+          <Field label="Status">
+            <select className={selectCls} value={form.status} onChange={e => set("status", e.target.value)}>
+              {["Oportunidade","Triagem","Elaboração","Revisão","Pronto","Inscrito","Diligência","Aprovado","Não Aprovado","Captado","Formalização","Execução","Concluído"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="Categoria do Edital">
+            <select className={selectCls} value={form.categoriaEdital} onChange={e => set("categoriaEdital", e.target.value)}>
+              {["","Fundo Municipal","Fundo Estadual","Ministério","Fundação Privada","Instituto Empresarial","Embaixada / Cooperação Internacional","Prêmio","Convênio Público","Outro"].map(c => <option key={c} value={c}>{c||"Selecione..."}</option>)}
+            </select>
+          </Field>
+          <Field label="Risco">
+            <select className={selectCls} value={form.risco} onChange={e => set("risco", e.target.value)}>
+              {["Baixo","Médio","Alto"].map(r => <option key={r}>{r}</option>)}
+            </select>
+          </Field>
+          <Field label="Competitividade">
+            <select className={selectCls} value={form.competitividade} onChange={e => set("competitividade", e.target.value)}>
+              {["Baixa","Média","Alta","Muito Alta"].map(c => <option key={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Probabilidade de Aprovação (%)">
+            <input className={inputCls} type="number" min="0" max="100" value={form.probabilidade} onChange={e => set("probabilidade", e.target.value)} />
+          </Field>
+          <Field label="Aderência ao Edital (1–5)">
+            <select className={selectCls} value={form.aderencia} onChange={e => set("aderencia", e.target.value)}>
+              {["1","2","3","4","5"].map(n => <option key={n} value={n}>{n} {"★".repeat(parseInt(n))}</option>)}
+            </select>
+          </Field>
+          <Field label="Território / Local">
+            <input className={inputCls} value={form.territorio} onChange={e => set("territorio", e.target.value)} placeholder="Ex: RPA 6 — Ipsep / Ibura" />
+          </Field>
+          <Field label="Público-Alvo">
+            <input className={inputCls} value={form.publico} onChange={e => set("publico", e.target.value)} placeholder="Ex: Adolescentes 14–18 anos" />
+          </Field>
+          <div className="md:col-span-2">
+            <Field label="Próximo Passo">
+              <input className={inputCls} value={form.proximoPasso} onChange={e => set("proximoPasso", e.target.value)} placeholder="Ex: Finalizar orçamento detalhado" />
+            </Field>
+          </div>
+          <div className="md:col-span-2">
+            <Field label="Observação Estratégica">
+              <textarea className={inputCls} rows={3} value={form.observacao} onChange={e => set("observacao", e.target.value)} placeholder="Notas internas, contexto, histórico..." />
+            </Field>
+          </div>
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>
+          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "Salvando..." : "Salvar Projeto"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── MODAL NOVO DOCUMENTO ──────────────────────────────────────────────────
+function ModalNovoDocumento({ projectId, projectName, onClose, onSaved }: {
+  projectId?: string; projectName?: string; onClose: () => void; onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({
+    nome: "", status: "Pendente", validade: "", url: "", projectId: projectId || "",
+  });
+
+  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSubmit = async () => {
+    if (!form.nome) { setError("Nome do documento é obrigatório."); return; }
+    setSaving(true);
+    setError("");
+    try {
+      await apiClient.uploadDocument({
+        nome: form.nome,
+        status: form.status,
+        validade: form.validade || null,
+        url: form.url || null,
+        projectId: form.projectId || null,
+      });
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setError(e.message || "Erro ao salvar documento.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Adicionar Documento${projectName ? ` — ${projectName}` : ""}`} onClose={onClose}>
+      <div className="space-y-4">
+        {error && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
+          </div>
+        )}
+        <Field label="Nome do Documento" required>
+          <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)}
+            placeholder="Ex: Estatuto Social, CND Federal, Plano de Trabalho..." />
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Status">
+            <select className={selectCls} value={form.status} onChange={e => set("status", e.target.value)}>
+              {["Pendente","Em Revisão","Aprovado","A Vencer","Vencido"].map(s => <option key={s}>{s}</option>)}
+            </select>
+          </Field>
+          <Field label="Validade (se houver)">
+            <input className={inputCls} type="date" value={form.validade} onChange={e => set("validade", e.target.value)} />
+          </Field>
+        </div>
+        <Field label="Link do Documento (Google Drive, OneDrive etc.)">
+          <input className={inputCls} type="url" value={form.url} onChange={e => set("url", e.target.value)}
+            placeholder="https://drive.google.com/..." />
+        </Field>
+        <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
+          💡 Cole o link de compartilhamento do documento no campo acima. O arquivo pode estar no Google Drive, OneDrive, Dropbox ou qualquer outro serviço.
+        </div>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>
+          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            {saving ? "Salvando..." : "Adicionar Documento"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ─── MODAL ATUALIZAR STATUS ────────────────────────────────────────────────
+function ModalAtualizarStatus({ project, onClose, onSaved }: {
+  project: Project; onClose: () => void; onSaved: () => void;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState(project.status);
+  const [justificativa, setJustificativa] = useState("");
+
+  const handleSubmit = async () => {
+    if (status === project.status) { onClose(); return; }
+    setSaving(true);
+    setError("");
+    try {
+      const token = localStorage.getItem("rota_token");
+      const res = await fetch(`/api/projects/${project.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status, justificativa }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || "Erro ao atualizar");
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Atualizar Status — ${project.nome}`} onClose={onClose}>
+      <div className="space-y-4">
+        {error && <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+        <div className="flex items-center gap-3 p-4 bg-slate-50 rounded-xl">
+          <div>
+            <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Status atual</p>
+            <StatusBadge status={project.status} size="md" />
+          </div>
+          <ChevronRight className="w-5 h-5 text-slate-300 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-slate-500 uppercase font-bold tracking-wider mb-1">Novo status</p>
+            <StatusBadge status={status as ProjectStatus} size="md" />
+          </div>
+        </div>
+        <Field label="Novo Status">
+          <select className={selectCls} value={status} onChange={e => setStatus(e.target.value as ProjectStatus)}>
+            {["Oportunidade","Triagem","Elaboração","Revisão","Pronto","Inscrito","Diligência","Aprovado","Não Aprovado","Captado","Formalização","Execução","Concluído","Arquivado"].map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        </Field>
+        <Field label="Justificativa (opcional)">
+          <textarea className={inputCls} rows={3} value={justificativa}
+            onChange={e => setJustificativa(e.target.value)}
+            placeholder="Descreva o motivo da mudança de status..." />
+        </Field>
+        <div className="flex gap-3 pt-2">
+          <button onClick={onClose} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 flex items-center justify-center gap-2">
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {saving ? "Salvando..." : "Confirmar"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 // --- MAIN APP ---
 
 function LoginView() {
@@ -1442,6 +1772,11 @@ export default function App() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // ── Modais globais ────────────────────────────────────────────────────────
+  const [modalNovoProj, setModalNovoProj] = useState(false);
+  const [modalNovoDoc, setModalNovoDoc] = useState<{ projectId?: string; projectName?: string } | null>(null);
+  const [modalStatus, setModalStatus] = useState<Project | null>(null);
 
   useEffect(() => {
     if (token) {
@@ -1600,17 +1935,57 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               {view === "dashboard" && <DashboardView projects={projects} alerts={alerts} onNav={setView} onProject={handleProjectSelect} />}
-              {view === "pipeline" && <PipelineView projects={projects} onProject={handleProjectSelect} />}
+              {view === "pipeline" && <PipelineView projects={projects} onProject={handleProjectSelect} onNewProject={() => setModalNovoProj(true)} />}
               {view === "editais" && <EditaisView />}
               {view === "alertas" && <AlertasView alerts={alerts} />}
-              {view === "documentos" && <DocumentosView documents={documents} />}
+              {view === "documentos" && <DocumentosView documents={documents} onNewDoc={() => setModalNovoDoc({})} />}
               {view === "memoria" && <MemoriaView stats={stats} auditLogs={auditLogs} />}
               {view === "relatorios" && <RelatoriosView />}
-              {view === "projeto" && selectedProject && <ProjectDetailView project={selectedProject} onBack={handleBack} />}
+              {view === "projeto" && selectedProject && (
+                <ProjectDetailView
+                  project={selectedProject}
+                  onBack={handleBack}
+                  onAddDoc={(projectId, projectName) => setModalNovoDoc({ projectId, projectName })}
+                  onUpdateStatus={(p) => setModalStatus(p)}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
       </main>
+
+      {/* ── Modais globais ── */}
+      {modalNovoProj && (
+        <ModalNovoProje
+          onClose={() => setModalNovoProj(false)}
+          onSaved={() => { setModalNovoProj(false); fetchData(); }}
+        />
+      )}
+      {modalNovoDoc !== null && (
+        <ModalNovoDocumento
+          projectId={modalNovoDoc.projectId}
+          projectName={modalNovoDoc.projectName}
+          onClose={() => setModalNovoDoc(null)}
+          onSaved={() => { setModalNovoDoc(null); fetchData(); }}
+        />
+      )}
+      {modalStatus !== null && (
+        <ModalAtualizarStatus
+          project={modalStatus}
+          onClose={() => setModalStatus(null)}
+          onSaved={() => {
+            setModalStatus(null);
+            fetchData();
+            if (selectedProject && selectedProject.id === modalStatus.id) {
+              // refresh selectedProject
+              apiClient.getProjects().then(ps => {
+                const updated = ps.find((p: Project) => p.id === modalStatus.id);
+                if (updated) setSelectedProject(updated);
+              }).catch(() => {});
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
