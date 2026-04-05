@@ -1,4 +1,3 @@
-# nixpacks.toml — força Node.js e instala TODAS as dependências para o build
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]
