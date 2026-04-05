@@ -2,7 +2,7 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "NODE_ENV=production node --loader tsx/esm server.ts"
+startCommand = "NODE_ENV=production tsx server.ts"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "on_failure"
