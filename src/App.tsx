@@ -49,19 +49,26 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-function formatDate(value: string | null | undefined): string {
+function formatDate(value: string | Date | null | undefined): string {
   if (!value) return "—";
   try {
-    return new Date(value).toLocaleDateString("pt-BR");
+    const d = value instanceof Date ? value : new Date(value);
+    if (isNaN(d.getTime())) return String(value);
+    return d.toLocaleDateString("pt-BR");
   } catch {
-    return value;
+    return String(value);
   }
 }
 
-function getResponsavelName(responsavel: string | { name: string } | undefined): string {
+function getResponsavelName(responsavel: unknown): string {
   if (!responsavel) return "—";
   if (typeof responsavel === "string") return responsavel;
-  return responsavel.name;
+  if (typeof responsavel === "object" && responsavel !== null) {
+    const obj = responsavel as Record<string, unknown>;
+    if (typeof obj.name === "string" && obj.name) return obj.name;
+    if (typeof obj.email === "string" && obj.email) return obj.email;
+  }
+  return "—";
 }
 
 const STATUS_META: Record<string, { color: string; bg: string; label: string }> = {
