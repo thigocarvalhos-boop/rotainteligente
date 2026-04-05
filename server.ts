@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { body, validationResult } from "express-validator";
@@ -28,7 +29,34 @@ if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
   console.warn("AVISO: JWT_SECRET ou JWT_REFRESH_SECRET não configurados. Usando chaves de desenvolvimento.");
 }
 
+async function initializeDatabase() {
+  console.log("[DB Init] Executando prisma db push...");
+  try {
+    const output = execSync("npx prisma db push --accept-data-loss", {
+      encoding: "utf-8",
+      env: { ...process.env },
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    console.log("[DB Init] prisma db push concluído com sucesso.");
+    if (output) console.log("[DB Init]", output.trim());
+  } catch (error: any) {
+    const stderr = error.stderr?.toString() || "";
+    const stdout = error.stdout?.toString() || "";
+    console.error("[DB Init] ERRO CRÍTICO: prisma db push falhou.");
+    if (stdout) console.error("[DB Init] stdout:", stdout.trim());
+    if (stderr) console.error("[DB Init] stderr:", stderr.trim());
+    throw new Error(`Falha ao inicializar o banco de dados: ${stderr || error.message}`);
+  }
+}
+
 async function startServer() {
+  try {
+    await initializeDatabase();
+  } catch (error) {
+    console.error("[Startup] Não foi possível inicializar o banco de dados. Encerrando servidor.", error);
+    process.exit(1);
+  }
+
   const app = express();
   const PORT = parseInt(process.env.PORT || "3000", 10);
 
@@ -60,11 +88,6 @@ async function startServer() {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
       console.error("ERRO: DATABASE_URL não configurada.");
-      return;
-    }
-
-    if (process.env.NODE_ENV === "production") {
-      console.warn("SEED: ignorado em ambiente de produção. Execute manualmente via npm run seed.");
       return;
     }
 
@@ -127,14 +150,17 @@ async function startServer() {
           }
         });
 
+        const prazoAlerta = new Date();
+        prazoAlerta.setDate(prazoAlerta.getDate() + 15);
         await prisma.alert.create({
           data: {
             projectId: project.id,
-            titulo: "Documento Vencendo",
+            titulo: "Documento a Vencer",
             mensagem: "CND Municipal Recife vence em 15 dias.",
             nivel: "N4",
             status: "PENDENTE",
-            tipo: "DOCUMENTO"
+            tipo: "DOCUMENTO",
+            prazo: prazoAlerta
           }
         });
 
