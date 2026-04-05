@@ -77,11 +77,12 @@ async function startServer() {
   };
 
   const seedData = async () => {
-    const dbUrl = process.env.DATABASE_URL;
-    if (!dbUrl) {
-      console.error("ERRO: DATABASE_URL não configurada.");
+    if (!process.env.DATABASE_URL) {
+      console.error("[Seed] ERRO: DATABASE_URL não configurada. Seed abortado.");
       return;
     }
+
+    console.log("[Seed] Iniciando seed de dados...");
 
     try {
       const adminEmail = "admin@guiasocial.org";
@@ -97,10 +98,21 @@ async function startServer() {
           role: "SUPER_ADMIN"
         }
       });
-      console.log("Seed: Admin user OK —", admin.email);
+
+      if (!admin?.id) {
+        console.error("[Seed] ERRO: Falha ao criar/verificar usuário admin. Seed abortado.");
+        return;
+      }
+      console.log("[Seed] Admin user OK —", admin.email, "| id:", admin.id);
 
       const projectCount = await prisma.project.count();
+      console.log("[Seed] Projetos existentes:", projectCount);
+
       if (projectCount === 0) {
+        console.log("[Seed] Criando projeto inicial...");
+
+        const alertPrazo = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+
         const project = await prisma.project.create({
           data: {
             nome: "Guia Digital Teen 2026",
@@ -141,19 +153,29 @@ async function startServer() {
           }
         });
 
-        await alertService.create({
-          projectId: project.id,
-          titulo: "Documento Vencendo",
-          mensagem: "CND Municipal Recife vence em 15 dias.",
-          nivel: "N4",
-          tipo: "DOCUMENTO",
-          prazo: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
-        });
+        if (!project?.id) {
+          console.error("[Seed] ERRO: Falha ao criar projeto inicial.");
+        } else {
+          console.log("[Seed] Projeto criado — id:", project.id, "| nome:", project.nome);
 
-        console.log("Seed: Initial project and alerts created.");
+          await alertService.create({
+            projectId: project.id,
+            titulo: "Documento Vencendo",
+            mensagem: "CND Municipal Recife vence em 15 dias.",
+            nivel: "N4",
+            tipo: "DOCUMENTO",
+            prazo: alertPrazo
+          });
+
+          console.log("[Seed] Alerta criado — prazo:", alertPrazo.toISOString());
+          console.log("[Seed] Projeto inicial e alertas criados com sucesso.");
+        }
+      } else {
+        console.log("[Seed] Projetos já existem — seed de projeto ignorado.");
       }
-    } catch (error) {
-      console.error("Seed: Erro ao popular dados iniciais.", error);
+    } catch (error: any) {
+      console.error("[Seed] ERRO ao popular dados iniciais:", error?.message ?? error);
+      console.error("[Seed] Stack:", error?.stack);
     }
   };
 
