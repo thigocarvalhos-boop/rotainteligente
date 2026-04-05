@@ -2,12 +2,36 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execFileSync } from "child_process";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { body, validationResult } from "express-validator";
 import { prisma } from "./src/lib/prisma";
 import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
+
+// ── Garante que as tabelas existem antes de qualquer coisa ─────────────────
+async function ensureDatabase(): Promise<void> {
+  console.log("[DB] Verificando banco de dados...");
+  try {
+    await prisma.$queryRaw`SELECT 1 FROM "User" LIMIT 1`;
+    console.log("[DB] Tabelas já existem — ok.");
+  } catch {
+    console.log("[DB] Tabelas não encontradas. Criando...");
+    try {
+      // Usa o binário local do prisma — funciona com Node.js e Bun
+      const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
+      execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
+        stdio: "inherit",
+        timeout: 120000,
+        env: { ...process.env },
+      });
+      console.log("[DB] Banco criado com sucesso.");
+    } catch (e: any) {
+      console.error("[DB] Erro ao criar banco:", e.message);
+    }
+  }
+}
 
 // Extend Express Request type
 declare global {
@@ -127,15 +151,13 @@ async function startServer() {
           }
         });
 
-        await prisma.alert.create({
-          data: {
-            projectId: project.id,
-            titulo: "Documento Vencendo",
-            mensagem: "CND Municipal Recife vence em 15 dias.",
-            nivel: "N4",
-            status: "PENDENTE",
-            tipo: "DOCUMENTO"
-          }
+        await alertService.create({
+          projectId: project.id,
+          titulo: "Documento Vencendo",
+          mensagem: "CND Municipal Recife vence em 15 dias.",
+          nivel: "N4",
+          tipo: "DOCUMENTO",
+          prazo: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
         });
 
         console.log("Seed: Initial project and alerts created.");
@@ -144,6 +166,8 @@ async function startServer() {
       console.error("Seed: Erro ao popular dados iniciais. Verifique a conexão com o banco de dados.", error);
     }
   };
+  // Garante tabelas antes do seed
+  await ensureDatabase();
   await seedData();
 
   // Verificar expiração de documentos a cada hora
@@ -156,6 +180,17 @@ async function startServer() {
       console.error("AlertService: Erro ao verificar expirações.", error);
     }
   }
+
+  // CORS — allows browser requests from any origin in development,
+  // tighten ALLOWED_ORIGIN in production via env var
+  app.use((req: any, res: any, next: any) => {
+    const origin = process.env.ALLOWED_ORIGIN || "*";
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
 
   app.use(express.json());
 
