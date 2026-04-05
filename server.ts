@@ -579,38 +579,54 @@ async function startServer() {
   });
 
   app.get("/api/audit-logs", authenticate, can("audit-logs:read"), async (req, res) => {
-    const logs = await prisma.auditLog.findMany({
-      include: { user: true, project: true },
-      orderBy: { data: "desc" },
-      take: 50
-    });
-    res.json(logs);
+    try {
+      const logs = await prisma.auditLog.findMany({
+        include: { user: true, project: true },
+        orderBy: { data: "desc" },
+        take: 50
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error("[GET /api/audit-logs]", error);
+      res.status(500).json({ error: "Erro ao buscar logs de auditoria" });
+    }
   });
 
   app.get("/api/documents", authenticate, async (req, res) => {
-    const docs = await prisma.document.findMany({
-      include: { project: true },
-      orderBy: { nome: "asc" }
-    });
-    res.json(docs);
+    try {
+      const docs = await prisma.document.findMany({
+        include: { project: true },
+        orderBy: { nome: "asc" }
+      });
+      res.json(docs);
+    } catch (error) {
+      console.error("[GET /api/documents]", error);
+      res.status(500).json({ error: "Erro ao buscar documentos" });
+    }
   });
 
   app.get("/api/stats", authenticate, can("stats:read"), async (req, res) => {
-    const [totalProjects, approvedProjects, totalValue] = await Promise.all([
-      prisma.project.count(),
-      prisma.project.count({ where: { status: "Aprovado" } }),
-      prisma.project.aggregate({ _sum: { valor: true } })
-    ]);
+    try {
+      const [totalProjects, approvedProjects, totalValue] = await Promise.all([
+        prisma.project.count(),
+        prisma.project.count({ where: { status: "Aprovado" } }),
+        prisma.project.aggregate({ _sum: { valor: true } })
+      ]);
 
-    res.json({
-      totalProjects,
-      approvedProjects,
-      totalValue: totalValue._sum.valor || 0,
-      approvalRate: totalProjects > 0 ? (approvedProjects / totalProjects) * 100 : 0
-    });
+      res.json({
+        totalProjects,
+        approvedProjects,
+        totalValue: totalValue._sum.valor ?? 0,
+        approvalRate: totalProjects > 0 ? (approvedProjects / totalProjects) * 100 : 0
+      });
+    } catch (error) {
+      console.error("[GET /api/stats]", error);
+      res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
   });
 
   if (process.env.NODE_ENV !== "production") {
+
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
