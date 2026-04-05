@@ -13,6 +13,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy",
     "db:generate": "prisma generate",
+    "db:seed": "tsx prisma/seed.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
@@ -43,5 +44,8 @@
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21"
   },
-  "devDependencies": {}
+  "devDependencies": {},
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
 }
