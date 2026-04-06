@@ -14,7 +14,7 @@ import {
   Search, ChevronRight, AlertCircle, CheckCircle2, Clock, ExternalLink,
   Download, ArrowLeft, Calendar, FileText, TrendingUp, ShieldCheck,
   Info, RefreshCw, Eye, Plus, X, Upload, Save, ChevronLeft,
-  Link2, Award, Target, Zap, BookOpen
+  Link2, Award, Target, Zap, BookOpen, Edit2, Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { B, EDITAIS } from "./mockData";
@@ -399,7 +399,7 @@ function DashboardView({ projects, alerts, onNav, onProject }: { projects: Proje
   );
 }
 
-function PipelineView({ projects, onProject, onNewProject }: { projects: Project[]; onProject: (p: Project) => void; onNewProject: () => void }) {
+function PipelineView({ projects, onProject, onNewProject, onEditProject }: { projects: Project[]; onProject: (p: Project) => void; onNewProject: () => void; onEditProject: (p: Project) => void }) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("Todos");
 
@@ -458,6 +458,7 @@ function PipelineView({ projects, onProject, onNewProject }: { projects: Project
                 <th className="text-left py-4 px-6 text-[10px] font-bold uppercase tracking-widest">Prob.</th>
                 <th className="text-left py-4 px-6 text-[10px] font-bold uppercase tracking-widest">Risco</th>
                 <th className="text-left py-4 px-6 text-[10px] font-bold uppercase tracking-widest">Prazo</th>
+                <th className="text-left py-4 px-6 text-[10px] font-bold uppercase tracking-widest">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -504,6 +505,15 @@ function PipelineView({ projects, onProject, onNewProject }: { projects: Project
                   <td className="py-4 px-6">
                     <p className="text-xs text-slate-600 font-medium">{formatDate(p.prazo)}</p>
                   </td>
+                  <td className="py-4 px-4" onClick={e => e.stopPropagation()}>
+                    <button
+                      onClick={() => onEditProject(p)}
+                      className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                      title="Editar projeto"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -514,11 +524,12 @@ function PipelineView({ projects, onProject, onNewProject }: { projects: Project
   );
 }
 
-function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus }: {
+function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditProject }: {
   project: Project;
   onBack: () => void;
   onAddDoc: (projectId: string, projectName: string) => void;
   onUpdateStatus: (project: Project) => void;
+  onEditProject: (project: Project) => void;
 }) {
   const [activeTab, setActiveTab] = useState("geral");
   
@@ -533,13 +544,21 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus }: {
 
   return (
     <div className="space-y-6">
-      <button 
-        onClick={onBack}
-        className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors text-sm font-bold uppercase tracking-widest"
-      >
-        <ArrowLeft className="w-4 h-4" />
-        Voltar ao Pipeline
-      </button>
+      <div className="flex items-center justify-between">
+        <button 
+          onClick={onBack}
+          className="flex items-center gap-2 text-slate-500 hover:text-slate-900 transition-colors text-sm font-bold uppercase tracking-widest"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Voltar ao Pipeline
+        </button>
+        <button
+          onClick={() => onEditProject(project)}
+          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+        >
+          <Edit2 className="w-4 h-4" /> Editar Projeto
+        </button>
+      </div>
 
       {/* Header Card */}
       <Card className="border-t-4 border-t-slate-800">
@@ -1055,6 +1074,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus }: {
           <Card title="Ações Rápidas">
             <div className="space-y-2">
               {[
+                { label: "Editar Projeto", icon: Edit2, action: () => onEditProject(project) },
                 { label: "Atualizar Status", icon: TrendingUp, action: () => onUpdateStatus(project) },
                 { label: "Adicionar Documento", icon: FileText, action: () => onAddDoc(project.id, project.nome) },
               ].map(action => (
@@ -1796,17 +1816,69 @@ function Field({ label, required, hint, children }: { label: string; required?: 
 const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all";
 const selectCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-all";
 
-// ─── MODAL NOVO PROJETO ────────────────────────────────────────────────────
-function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+// ─── MODAL PROJETO (CREATE + EDIT) ────────────────────────────────────────
+function ModalProjet({ project, onClose, onSaved }: {
+  project?: Project | null;   // null/undefined = criar, Project = editar
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = Boolean(project?.id);
+
+  // Converte o prazo ISO do banco para formato date input (YYYY-MM-DD)
+  const toDateInput = (iso: string | null | undefined) => {
+    if (!iso) return "";
+    try { return new Date(iso).toISOString().split("T")[0]; } catch { return ""; }
+  };
+
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<"basico" | "avancado">("basico");
   const [form, setForm] = useState({
-    nome: "", edital: "", financiador: "", area: "Digital",
-    valor: "", status: "Triagem", prazo: "", probabilidade: "50",
-    risco: "Médio", aderencia: "3", territorio: "", publico: "",
-    competitividade: "Média", proximoPasso: "", observacao: "",
-    categoriaEdital: "", programaInterno: "", ptScore: "7.0",
+    nome:            project?.nome || "",
+    edital:          project?.edital || "",
+    financiador:     project?.financiador || "",
+    area:            project?.area || "Digital",
+    valor:           project ? String(project.valor) : "",
+    status:          project?.status || "Triagem",
+    prazo:           toDateInput(project?.prazo),
+    probabilidade:   project ? String(project.probabilidade) : "50",
+    risco:           project?.risco || "Médio",
+    aderencia:       project ? String(project.aderencia) : "3",
+    territorio:      project?.territorio || "",
+    publico:         project?.publico || "",
+    competitividade: project?.competitividade || "Média",
+    proximoPasso:    project?.proximoPasso || "",
+    observacao:      project?.observacao || "",
+    categoriaEdital: project?.categoriaEdital || "",
+    programaInterno: project?.programaInterno || "",
+    ptScore:         project ? String(project.ptScore) : "7.0",
   });
+
+  // Se o projeto mudar externamente (troca de registro), re-popula
+  useEffect(() => {
+    if (project) {
+      setForm({
+        nome:            project.nome || "",
+        edital:          project.edital || "",
+        financiador:     project.financiador || "",
+        area:            project.area || "Digital",
+        valor:           String(project.valor),
+        status:          project.status || "Triagem",
+        prazo:           toDateInput(project.prazo),
+        probabilidade:   String(project.probabilidade),
+        risco:           project.risco || "Médio",
+        aderencia:       String(project.aderencia),
+        territorio:      project.territorio || "",
+        publico:         project.publico || "",
+        competitividade: project.competitividade || "Média",
+        proximoPasso:    project.proximoPasso || "",
+        observacao:      project.observacao || "",
+        categoriaEdital: project.categoriaEdital || "",
+        programaInterno: project.programaInterno || "",
+        ptScore:         String(project.ptScore),
+      });
+    }
+  }, [project?.id]);
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
@@ -1818,15 +1890,20 @@ function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     setSaving(true);
     setError("");
     try {
-      await apiClient.createProject({
+      const payload = {
         ...form,
-        status: form.status as import("./types").ProjectStatus,
-        risco: form.risco as "Baixo" | "Médio" | "Alto",
-        valor: parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
+        status:        form.status as ProjectStatus,
+        risco:         form.risco as "Baixo" | "Médio" | "Alto",
+        valor:         parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
         probabilidade: parseInt(form.probabilidade),
-        aderencia: parseInt(form.aderencia),
-        ptScore: parseFloat(form.ptScore),
-      });
+        aderencia:     parseInt(form.aderencia),
+        ptScore:       parseFloat(form.ptScore),
+      };
+      if (isEdit && project?.id) {
+        await apiClient.updateProject(project.id, payload);
+      } else {
+        await apiClient.createProject(payload);
+      }
       onSaved();
       onClose();
     } catch (e: any) {
@@ -1837,96 +1914,134 @@ function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   };
 
   return (
-    <Modal title="Novo Projeto" onClose={onClose}>
-      <div className="space-y-4">
+    <Modal title={isEdit ? `Editar — ${project!.nome}` : "Novo Projeto"} onClose={onClose} wide>
+      <div className="space-y-5">
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
             <AlertCircle className="w-4 h-4 flex-shrink-0" />{error}
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="md:col-span-2">
-            <Field label="Nome do Projeto" required>
-              <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)} placeholder="Ex: Guia Digital Teen 2026" />
-            </Field>
+        {isEdit && (
+          <div className="flex items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-lg">
+            <Info className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+            <p className="text-xs text-indigo-700 font-medium">
+              Modo edição — alterações serão salvas no registro existente (ID: {project!.id.substring(0, 8)}…)
+            </p>
           </div>
-          <Field label="Edital / Chamamento" required>
-            <input className={inputCls} value={form.edital} onChange={e => set("edital", e.target.value)} placeholder="Ex: FMCA/COMDICA 2026" />
-          </Field>
-          <Field label="Financiador" required>
-            <input className={inputCls} value={form.financiador} onChange={e => set("financiador", e.target.value)} placeholder="Ex: Fundo Municipal da Criança" />
-          </Field>
-          <Field label="Área Temática">
-            <select className={selectCls} value={form.area} onChange={e => set("area", e.target.value)}>
-              {["Digital","Primeira Infância","Saúde Mental / TEA","Esporte","Inclusão Produtiva","Segurança Alimentar","Direitos Humanos","Cultura","Educação","Outro"].map(a => <option key={a}>{a}</option>)}
-            </select>
-          </Field>
-          <Field label="Programa Interno">
-            <input className={inputCls} value={form.programaInterno} onChange={e => set("programaInterno", e.target.value)} placeholder="Ex: Inclusão Digital" />
-          </Field>
-          <Field label="Valor Solicitado (R$)" required>
-            <input className={inputCls} type="number" value={form.valor} onChange={e => set("valor", e.target.value)} placeholder="Ex: 320000" />
-          </Field>
-          <Field label="Prazo / Data Limite" required>
-            <input className={inputCls} type="date" value={form.prazo} onChange={e => set("prazo", e.target.value)} />
-          </Field>
-          <Field label="Status">
-            <select className={selectCls} value={form.status} onChange={e => set("status", e.target.value)}>
-              {["Oportunidade","Triagem","Elaboração","Revisão","Pronto","Inscrito","Diligência","Aprovado","Não Aprovado","Captado","Formalização","Execução","Concluído"].map(s => <option key={s}>{s}</option>)}
-            </select>
-          </Field>
-          <Field label="Categoria do Edital">
-            <select className={selectCls} value={form.categoriaEdital} onChange={e => set("categoriaEdital", e.target.value)}>
-              {["","Fundo Municipal","Fundo Estadual","Ministério","Fundação Privada","Instituto Empresarial","Embaixada / Cooperação Internacional","Prêmio","Convênio Público","Outro"].map(c => <option key={c} value={c}>{c||"Selecione..."}</option>)}
-            </select>
-          </Field>
-          <Field label="Risco">
-            <select className={selectCls} value={form.risco} onChange={e => set("risco", e.target.value)}>
-              {["Baixo","Médio","Alto"].map(r => <option key={r}>{r}</option>)}
-            </select>
-          </Field>
-          <Field label="Competitividade">
-            <select className={selectCls} value={form.competitividade} onChange={e => set("competitividade", e.target.value)}>
-              {["Baixa","Média","Alta","Muito Alta"].map(c => <option key={c}>{c}</option>)}
-            </select>
-          </Field>
-          <Field label="Probabilidade de Aprovação (%)">
-            <input className={inputCls} type="number" min="0" max="100" value={form.probabilidade} onChange={e => set("probabilidade", e.target.value)} />
-          </Field>
-          <Field label="Aderência ao Edital (1–5)">
-            <select className={selectCls} value={form.aderencia} onChange={e => set("aderencia", e.target.value)}>
-              {["1","2","3","4","5"].map(n => <option key={n} value={n}>{n} {"★".repeat(parseInt(n))}</option>)}
-            </select>
-          </Field>
-          <Field label="Território / Local">
-            <input className={inputCls} value={form.territorio} onChange={e => set("territorio", e.target.value)} placeholder="Ex: RPA 6 — Ipsep / Ibura" />
-          </Field>
-          <Field label="Público-Alvo">
-            <input className={inputCls} value={form.publico} onChange={e => set("publico", e.target.value)} placeholder="Ex: Adolescentes 14–18 anos" />
-          </Field>
-          <div className="md:col-span-2">
-            <Field label="Próximo Passo">
-              <input className={inputCls} value={form.proximoPasso} onChange={e => set("proximoPasso", e.target.value)} placeholder="Ex: Finalizar orçamento detalhado" />
-            </Field>
-          </div>
-          <div className="md:col-span-2">
-            <Field label="Observação Estratégica">
-              <textarea className={inputCls} rows={3} value={form.observacao} onChange={e => set("observacao", e.target.value)} placeholder="Notas internas, contexto, histórico..." />
-            </Field>
-          </div>
+        )}
+
+        {/* Tabs */}
+        <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+          <button onClick={() => setTab("basico")} className={cn("flex-1 py-2 text-xs font-bold transition-colors", tab === "basico" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>
+            Dados Básicos
+          </button>
+          <button onClick={() => setTab("avancado")} className={cn("flex-1 py-2 text-xs font-bold transition-colors", tab === "avancado" ? "bg-indigo-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50")}>
+            Análise e Contexto
+          </button>
         </div>
+
+        {tab === "basico" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="md:col-span-2">
+              <Field label="Nome do Projeto" required>
+                <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)} placeholder="Ex: Guia Digital Teen 2026" />
+              </Field>
+            </div>
+            <Field label="Edital / Chamamento">
+              <input className={inputCls} value={form.edital} onChange={e => set("edital", e.target.value)} placeholder="Ex: FMCA/COMDICA 2026" />
+            </Field>
+            <Field label="Financiador" required>
+              <input className={inputCls} value={form.financiador} onChange={e => set("financiador", e.target.value)} placeholder="Ex: Fundo Municipal da Criança" />
+            </Field>
+            <Field label="Valor Solicitado (R$)" required>
+              <input className={inputCls} type="number" value={form.valor} onChange={e => set("valor", e.target.value)} placeholder="Ex: 320000" />
+            </Field>
+            <Field label="Prazo / Data Limite" required>
+              <input className={inputCls} type="date" value={form.prazo} onChange={e => set("prazo", e.target.value)} />
+            </Field>
+            <Field label="Status">
+              <select className={selectCls} value={form.status} onChange={e => set("status", e.target.value)}>
+                {["Oportunidade","Triagem","Elaboração","Revisão","Pronto","Inscrito","Diligência","Aprovado","Não Aprovado","Captado","Formalização","Execução","Concluído","Arquivado"].map(s => <option key={s}>{s}</option>)}
+              </select>
+            </Field>
+            <Field label="Área Temática">
+              <select className={selectCls} value={form.area} onChange={e => set("area", e.target.value)}>
+                {["Digital","Primeira Infância","Saúde Mental / TEA","Esporte","Inclusão Produtiva","Segurança Alimentar","Direitos Humanos","Cultura","Educação","Outro"].map(a => <option key={a}>{a}</option>)}
+              </select>
+            </Field>
+            <Field label="Categoria do Edital">
+              <select className={selectCls} value={form.categoriaEdital} onChange={e => set("categoriaEdital", e.target.value)}>
+                {["","Fundo Municipal","Fundo Estadual","Ministério","Fundação Privada","Instituto Empresarial","Embaixada","Prêmio","Convênio Público","Outro"].map(c => <option key={c} value={c}>{c || "Selecione..."}</option>)}
+              </select>
+            </Field>
+            <Field label="Programa Interno">
+              <input className={inputCls} value={form.programaInterno} onChange={e => set("programaInterno", e.target.value)} placeholder="Ex: Inclusão Digital" />
+            </Field>
+            <Field label="Território / Local">
+              <input className={inputCls} value={form.territorio} onChange={e => set("territorio", e.target.value)} placeholder="Ex: RPA 6 — Ipsep / Ibura" />
+            </Field>
+            <Field label="Público-Alvo">
+              <input className={inputCls} value={form.publico} onChange={e => set("publico", e.target.value)} placeholder="Ex: Adolescentes 14–18 anos" />
+            </Field>
+          </div>
+        )}
+
+        {tab === "avancado" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Field label="Probabilidade de Aprovação (%)">
+              <div className="flex items-center gap-3">
+                <input className="flex-1" type="range" min="0" max="100" value={form.probabilidade} onChange={e => set("probabilidade", e.target.value)} />
+                <span className="text-sm font-bold text-indigo-600 w-10 text-right">{form.probabilidade}%</span>
+              </div>
+            </Field>
+            <Field label="Aderência ao Edital (1–5)">
+              <select className={selectCls} value={form.aderencia} onChange={e => set("aderencia", e.target.value)}>
+                {["1","2","3","4","5"].map(n => <option key={n} value={n}>{n} {"★".repeat(parseInt(n))}</option>)}
+              </select>
+            </Field>
+            <Field label="Risco">
+              <select className={selectCls} value={form.risco} onChange={e => set("risco", e.target.value)}>
+                {["Baixo","Médio","Alto"].map(r => <option key={r}>{r}</option>)}
+              </select>
+            </Field>
+            <Field label="Competitividade">
+              <select className={selectCls} value={form.competitividade} onChange={e => set("competitividade", e.target.value)}>
+                {["Baixa","Média","Alta","Muito Alta"].map(c => <option key={c}>{c}</option>)}
+              </select>
+            </Field>
+            <Field label="Score PTI (0–10)" hint="Parecer Técnico Interno">
+              <input className={inputCls} type="number" min="0" max="10" step="0.1" value={form.ptScore} onChange={e => set("ptScore", e.target.value)} />
+            </Field>
+            <div className="md:col-span-2">
+              <Field label="Próximo Passo">
+                <input className={inputCls} value={form.proximoPasso} onChange={e => set("proximoPasso", e.target.value)} placeholder="Ex: Finalizar orçamento detalhado" />
+              </Field>
+            </div>
+            <div className="md:col-span-2">
+              <Field label="Observação Estratégica">
+                <textarea className={inputCls} rows={3} value={form.observacao} onChange={e => set("observacao", e.target.value)} placeholder="Histórico IGS com este financiador, pontos fortes, riscos..." />
+              </Field>
+            </div>
+          </div>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>
-          <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+          <button onClick={handleSubmit} disabled={saving}
+            className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
             {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? "Salvando..." : "Salvar Projeto"}
+            {saving ? "Salvando..." : isEdit ? "Salvar Alterações" : "Criar Projeto"}
           </button>
         </div>
       </div>
     </Modal>
   );
+}
+
+// Alias mantido para retrocompatibilidade com qualquer referência de criação simples
+function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+  return <ModalProjet project={null} onClose={onClose} onSaved={onSaved} />;
 }
 
 // ─── MODAL NOVO DOCUMENTO ──────────────────────────────────────────────────
@@ -2168,8 +2283,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   // ── Modais globais ────────────────────────────────────────────────────────
-  const [modalNovoProj, setModalNovoProj] = useState(false);
-  const [modalNovoDoc, setModalNovoDoc] = useState<{ projectId?: string; projectName?: string } | null>(null);
+  // null = fechado | false = criar novo | Project = editar existente
+  const [modalNovoProj, setModalNovoProj] = useState<Project | false | null>(null);
+  const [modalNovoDoc, setModalNovoDoc] = useState<{ projectId?: string; projectName?: string; doc?: any } | null>(null);
   const [modalStatus, setModalStatus] = useState<Project | null>(null);
 
   useEffect(() => {
@@ -2334,8 +2450,8 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               {view === "dashboard" && <DashboardView projects={projects} alerts={alerts} onNav={setView} onProject={handleProjectSelect} />}
-              {view === "pipeline" && <PipelineView projects={projects} onProject={handleProjectSelect} onNewProject={() => setModalNovoProj(true)} />}
-              {view === "editais" && <EditaisView onNewProject={(e) => { setModalNovoProj(true); }} />}
+              {view === "pipeline" && <PipelineView projects={projects} onProject={handleProjectSelect} onNewProject={() => setModalNovoProj(false)} onEditProject={(p) => setModalNovoProj(p)} />}
+              {view === "editais" && <EditaisView onNewProject={(e) => { setModalNovoProj(false); }} />}
               {view === "alertas" && <AlertasView alerts={alerts} />}
               {view === "documentos" && <DocumentosView documents={documents} onNewDoc={() => setModalNovoDoc({})} />}
               {view === "memoria" && <MemoriaView projects={projects} stats={stats} auditLogs={auditLogs} />}
@@ -2346,6 +2462,7 @@ export default function App() {
                   onBack={handleBack}
                   onAddDoc={(projectId, projectName) => setModalNovoDoc({ projectId, projectName })}
                   onUpdateStatus={(p) => setModalStatus(p)}
+                  onEditProject={(p) => setModalNovoProj(p)}
                 />
               )}
             </motion.div>
@@ -2354,10 +2471,22 @@ export default function App() {
       </main>
 
       {/* ── Modais globais ── */}
-      {modalNovoProj && (
-        <ModalNovoProje
-          onClose={() => setModalNovoProj(false)}
-          onSaved={() => { setModalNovoProj(false); fetchData(); }}
+      {modalNovoProj !== null && (
+        <ModalProjet
+          project={modalNovoProj === false ? null : modalNovoProj}
+          onClose={() => setModalNovoProj(null)}
+          onSaved={() => {
+            const editedId = modalNovoProj && typeof modalNovoProj === "object" ? (modalNovoProj as Project).id : null;
+            setModalNovoProj(null);
+            fetchData().then(() => {
+              if (editedId && selectedProject?.id === editedId) {
+                apiClient.getProjects().then(ps => {
+                  const updated = ps.find((p: Project) => p.id === editedId);
+                  if (updated) setSelectedProject(updated);
+                }).catch(() => {});
+              }
+            }).catch(() => {});
+          }}
         />
       )}
       {modalNovoDoc !== null && (
