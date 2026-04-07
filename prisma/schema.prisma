@@ -58,15 +58,15 @@ enum ComplianceStatus {
 }
 
 model User {
-  id           String           @id @default(cuid())
+  id           String   @id @default(cuid())
   name         String
-  email        String           @unique
+  email        String   @unique
   passwordHash String
-  role         UserRole         @default(TECNICO)
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  role         UserRole @default(TECNICO)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  projectsResponsible Project[]       @relation("ProjectResponsible")
+  projectsResponsible Project[]        @relation("ProjectResponsible")
   projectHistories    ProjectHistory[]
   documentChecks      DocumentCheck[]
   auditLogs           AuditLog[]
@@ -87,33 +87,33 @@ model Edital {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
-  projects               Project[]
+  projects Project[]
 }
 
 model Project {
-  id               String          @id @default(cuid())
-  nome             String
-  financiador      String
-  area             String
-  valor            Float
-  status           ProjectStatus   @default(TRIAGEM)
-  probabilidade    Int             @default(50)
-  risco            RiskLevel       @default(MEDIO)
-  prazo            DateTime?
-  observacao       String?
-  proximoPasso     String?
-  editalId         String?
-  publico          String?
-  territorio       String?
-  competitividade  String?
-  aderencia        Int?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  id              String        @id @default(cuid())
+  nome            String
+  financiador     String
+  area            String
+  valor           Float
+  status          ProjectStatus @default(TRIAGEM)
+  probabilidade   Int           @default(50)
+  risco           RiskLevel     @default(MEDIO)
+  prazo           DateTime?
+  observacao      String?
+  proximoPasso    String?
+  editalId        String?
+  publico         String?
+  territorio      String?
+  competitividade String?
+  aderencia       Int?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
-  responsavelId    String?
-  responsavel      User?           @relation("ProjectResponsible", fields: [responsavelId], references: [id])
+  responsavelId String?
+  responsavel   User?   @relation("ProjectResponsible", fields: [responsavelId], references: [id])
 
-  edital           Edital?         @relation(fields: [editalId], references: [id])
+  edital           Edital?           @relation(fields: [editalId], references: [id])
   documents        Document[]
   alerts           Alert[]
   complianceChecks ComplianceCheck[]
@@ -122,69 +122,69 @@ model Project {
 }
 
 model Document {
-  id           String         @id @default(cuid())
-  projectId    String
-  tipo         String
-  nome         String
-  url          String?
-  validade     DateTime?
-  obrigatorio  Boolean        @default(false)
-  status       DocumentStatus @default(PENDENTE)
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id          String         @id @default(cuid())
+  projectId   String
+  tipo        String
+  nome        String
+  url         String?
+  validade    DateTime?
+  obrigatorio Boolean        @default(false)
+  status      DocumentStatus @default(PENDENTE)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  project      Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  checks       DocumentCheck[]
+  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  checks  DocumentCheck[]
 }
 
 model DocumentCheck {
-  id          String         @id @default(cuid())
-  documentId  String
-  checkedAt   DateTime       @default(now())
-  status      DocumentStatus
-  observacao  String?
-  userId      String?
+  id         String         @id @default(cuid())
+  documentId String
+  checkedAt  DateTime       @default(now())
+  status     DocumentStatus
+  observacao String?
+  userId     String?
 
-  document    Document       @relation(fields: [documentId], references: [id], onDelete: Cascade)
-  user        User?          @relation(fields: [userId], references: [id])
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User?    @relation(fields: [userId], references: [id])
 }
 
 model Alert {
-  id          String      @id @default(cuid())
-  projectId   String?
-  tipo        String
-  nivel       AlertLevel
-  mensagem    String
-  data        DateTime    @default(now())
-  resolvido   Boolean     @default(false)
-  createdAt   DateTime    @default(now())
+  id        String     @id @default(cuid())
+  projectId String?
+  tipo      String
+  nivel     AlertLevel
+  mensagem  String
+  data      DateTime   @default(now())
+  resolvido Boolean    @default(false)
+  createdAt DateTime   @default(now())
 
-  project     Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 }
 
 model ComplianceCheck {
-  id          String           @id @default(cuid())
-  projectId   String
-  item        String
-  status      ComplianceStatus
-  descricao   String
-  createdAt   DateTime         @default(now())
+  id        String           @id @default(cuid())
+  projectId String
+  item      String
+  status    ComplianceStatus
+  descricao String
+  createdAt DateTime         @default(now())
 
-  project     Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
 
 model ProjectHistory {
   id            String   @id @default(cuid())
-  projectId      String
-  field          String
-  oldValue       String?
-  newValue       String?
-  justificativa  String?
-  userId         String?
-  createdAt      DateTime @default(now())
+  projectId     String
+  field         String
+  oldValue      String?
+  newValue      String?
+  justificativa String?
+  userId        String?
+  createdAt     DateTime @default(now())
 
-  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  user           User?    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
 }
 
 model AuditLog {
@@ -195,9 +195,9 @@ model AuditLog {
   data       DateTime @default(now())
   detalhes   Json?
 
-  userId     String?
-  projectId  String?
+  userId    String?
+  projectId String?
 
-  user       User?    @relation(fields: [userId], references: [id])
-  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user    User?    @relation(fields: [userId], references: [id])
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 }
