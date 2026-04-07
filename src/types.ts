@@ -93,11 +93,11 @@ export interface Edital {
   financiador: string;
   valorMax: number;
   prazo: string;
-  status: "Aberto" | "Encerrado" | "Em análise";
+  status: string;
   aderencia: number;
   categoria: string;
   linha: string;
-  porte: "Micro" | "Pequeno" | "Médio" | "Grande";
+  porte: string;
   link?: string;
   observacao?: string;
 }
