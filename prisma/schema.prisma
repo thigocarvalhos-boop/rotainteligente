@@ -14,49 +14,6 @@ enum UserRole {
   AUDITOR
 }
 
-enum ProjectStatus {
-  OPORTUNIDADE
-  TRIAGEM
-  ELABORACAO
-  REVISAO
-  PRONTO
-  INSCRITO
-  DILIGENCIA
-  APROVADO
-  NAO_APROVADO
-  CAPTADO
-  FORMALIZACAO
-  EXECUCAO
-  CONCLUIDO
-  ARQUIVADO
-}
-
-enum RiskLevel {
-  BAIXO
-  MEDIO
-  ALTO
-}
-
-enum DocumentStatus {
-  VALIDO
-  VENCIDO
-  PENDENTE
-  REJEITADO
-}
-
-enum AlertLevel {
-  N1
-  N2
-  N3
-  N4
-}
-
-enum ComplianceStatus {
-  OK
-  ALERTA
-  ERRO
-}
-
 model User {
   id           String   @id @default(cuid())
   name         String
@@ -73,32 +30,38 @@ model User {
 }
 
 model Edital {
-  id                     String    @id @default(cuid())
-  nome                   String
-  financiador            String
-  area                   String
-  valorMin               Float?
-  valorMax               Float?
-  prazo                  DateTime?
-  descricao              String?
-  link                   String?
+  id          String   @id @default(cuid())
+  nome        String
+  financiador String
+  area        String?
+  valorMin    Float?
+  valorMax    Float    @default(0)
+  prazo       DateTime?
+  status      String   @default("Aberto")
+  aderencia   Int      @default(3)
+  categoria   String   @default("Outro")
+  linha       String?
+  porte       String   @default("Médio")
+  descricao   String?
+  link        String?
+  observacao  String?
   criteriosJson          Json?
   documentosObrigatorios Json?
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  projects Project[]
+  projects    Project[]
 }
 
 model Project {
-  id              String        @id @default(cuid())
+  id              String   @id @default(cuid())
   nome            String
   financiador     String
   area            String
   valor           Float
-  status          ProjectStatus @default(TRIAGEM)
-  probabilidade   Int           @default(50)
-  risco           RiskLevel     @default(MEDIO)
+  status          String   @default("Triagem")
+  probabilidade   Int      @default(50)
+  risco           String   @default("Médio")
   prazo           DateTime?
   observacao      String?
   proximoPasso    String?
@@ -107,13 +70,27 @@ model Project {
   territorio      String?
   competitividade String?
   aderencia       Int?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  edital          String?
+  ptScore         Float?
+  ptCriterios     Json?
+  historico       Json?
+  changeLog       Json?
+  ano             Int?
+  categoriaEdital String?
+  programaInterno String?
+  vigenciaInicio  DateTime?
+  vigenciaFim     DateTime?
+  progressoFisico     Float?
+  progressoFinanceiro Float?
+  scoreCompliance     Float?
+  scoreRiscoGlosa     Float?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   responsavelId String?
   responsavel   User?   @relation("ProjectResponsible", fields: [responsavelId], references: [id])
 
-  edital           Edital?           @relation(fields: [editalId], references: [id])
+  editalRef        Edital?           @relation(fields: [editalId], references: [id])
   documents        Document[]
   alerts           Alert[]
   complianceChecks ComplianceCheck[]
@@ -122,26 +99,26 @@ model Project {
 }
 
 model Document {
-  id          String         @id @default(cuid())
-  projectId   String
-  tipo        String
+  id          String    @id @default(cuid())
+  projectId   String?
+  tipo        String?
   nome        String
   url         String?
   validade    DateTime?
-  obrigatorio Boolean        @default(false)
-  status      DocumentStatus @default(PENDENTE)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  obrigatorio Boolean   @default(false)
+  status      String    @default("Pendente")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  project Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   checks  DocumentCheck[]
 }
 
 model DocumentCheck {
-  id         String         @id @default(cuid())
+  id         String   @id @default(cuid())
   documentId String
-  checkedAt  DateTime       @default(now())
-  status     DocumentStatus
+  checkedAt  DateTime @default(now())
+  status     String
   observacao String?
   userId     String?
 
@@ -150,25 +127,32 @@ model DocumentCheck {
 }
 
 model Alert {
-  id        String     @id @default(cuid())
+  id        String   @id @default(cuid())
   projectId String?
   tipo      String
-  nivel     AlertLevel
+  nivel     String
+  titulo    String?
   mensagem  String
-  data      DateTime   @default(now())
-  resolvido Boolean    @default(false)
-  createdAt DateTime   @default(now())
+  status    String   @default("PENDENTE")
+  prazo     DateTime?
+  resolucao String?
+  lido      Boolean  @default(false)
+  lidoEm    DateTime?
+  lidoPor   String?
+  data      DateTime @default(now())
+  resolvido Boolean  @default(false)
+  createdAt DateTime @default(now())
 
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 }
 
 model ComplianceCheck {
-  id        String           @id @default(cuid())
+  id        String   @id @default(cuid())
   projectId String
   item      String
-  status    ComplianceStatus
+  status    String
   descricao String
-  createdAt DateTime         @default(now())
+  createdAt DateTime @default(now())
 
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 }
@@ -194,6 +178,8 @@ model AuditLog {
   entidadeId String?
   data       DateTime @default(now())
   detalhes   Json?
+  antes      Json?
+  depois     Json?
 
   userId    String?
   projectId String?

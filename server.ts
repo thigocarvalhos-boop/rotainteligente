@@ -97,9 +97,9 @@ async function startServer() {
         update: {},
         create: {
           email: adminEmail,
-          password: hashedPassword,
+          passwordHash: hashedPassword,
           name: "Administrador ROTA",
-          role: "SUPER_ADMIN"
+          role: "ADMIN"
         }
       });
       console.log("Seed: Admin user OK —", admin.email);
@@ -109,7 +109,6 @@ async function startServer() {
         const project = await prisma.project.create({
           data: {
             nome: "Guia Digital Teen 2026",
-            edital: "FMCA/COMDICA",
             financiador: "Fundo Municipal da Criança",
             area: "Digital",
             valor: 320000,
@@ -123,27 +122,16 @@ async function startServer() {
             publico: "Adolescentes 12–18 anos",
             competitividade: "Alta",
             proximoPasso: "Aguardar resultado do edital",
-            ptScore: 8,
-            metas: {
-              create: [
-                { descricao: "Certificar jovens em tecnologia", indicador: "Jovens certificados", meta: 500, alcancado: 380, unidade: "Jovens", budget: 150000 },
-                { descricao: "Inserção no mercado de trabalho", indicador: "Jovens empregados", meta: 50, alcancado: 12, unidade: "Jovens", budget: 100000 }
-              ]
-            },
-            etapas: {
-              create: [
-                { nome: "Mobilização", inicio: new Date("2026-01-01"), fim: new Date("2026-02-28"), status: "Concluído", peso: 20 },
-                { nome: "Execução das Aulas", inicio: new Date("2026-03-01"), fim: new Date("2026-07-31"), status: "Em curso", peso: 60 }
-              ]
-            },
-            docs: {
-              create: [
-                { nome: "Estatuto Social", status: "Aprovado", validade: null },
-                { nome: "CNPJ", status: "Aprovado", validade: null },
-                { nome: "CND Federal", status: "Aprovado", validade: new Date("2026-05-20") }
-              ]
-            }
           }
+        });
+
+        // Create documents for the project
+        await prisma.document.createMany({
+          data: [
+            { nome: "Estatuto Social", status: "Aprovado", validade: null, projectId: project.id },
+            { nome: "CNPJ", status: "Aprovado", validade: null, projectId: project.id },
+            { nome: "CND Federal", status: "Aprovado", validade: new Date("2026-05-20"), projectId: project.id }
+          ]
         });
 
         await alertService.create({
@@ -156,6 +144,20 @@ async function startServer() {
         });
 
         console.log("Seed: Initial project and alerts created.");
+      }
+
+      // Seed editais if empty
+      const editalCount = await prisma.edital.count();
+      if (editalCount === 0) {
+        await prisma.edital.createMany({
+          data: [
+            { nome: "Chamamento Público COMDICA 2026", financiador: "Prefeitura do Recife / COMDICA", valorMax: 400000, prazo: new Date("2026-05-15"), status: "Aberto", aderencia: 5, categoria: "Fundo Municipal", linha: "Eixo I — Proteção Básica", porte: "Grande", link: "https://recife.pe.gov.br/comdica", observacao: "Edital recorrente. IGS tem histórico de 100% de aprovação neste financiador." },
+            { nome: "Edital Tecendo Infâncias", financiador: "Fundação Maria Cecilia Souto Vidigal", valorMax: 150000, prazo: new Date("2026-04-24"), status: "Aberto", aderencia: 4, categoria: "Fundação Privada", linha: "Primeira Infância", porte: "Pequeno", link: "https://fmcsv.org.br", observacao: "Exige vídeo de apresentação e portfólio detalhado." },
+            { nome: "BrazilFoundation — Ciclo 2026", financiador: "BrazilFoundation", valorMax: 100000, prazo: new Date("2026-06-30"), status: "Em análise", aderencia: 3, categoria: "Cooperação Internacional", linha: "Educação e Cidadania", porte: "Médio", observacao: "Aguardando publicação do guia do proponente." },
+            { nome: "Edital Itaú Social — Unicef", financiador: "Itaú Social", valorMax: 250000, prazo: new Date("2026-04-10"), status: "Encerrado", aderencia: 5, categoria: "Instituto Privado", linha: "Educação Integral", porte: "Médio", observacao: "IGS não submeteu este ano por conflito de agenda com COMDICA." },
+          ],
+        });
+        console.log("Seed: Initial editais created.");
       }
     } catch (error) {
       console.error("Seed: Erro ao popular dados iniciais. Verifique a conexão com o banco de dados.", error);
@@ -210,14 +212,14 @@ async function startServer() {
 
   // RBAC Middleware
   const PERMISSIONS: Record<string, string[]> = {
-    "expenses:create":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "FINANCEIRO"],
-    "documents:create":  ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "DOCUMENTAL"],
-    "audit-logs:read":   ["SUPER_ADMIN", "DIRETORIA", "MONITORAMENTO"],
-    "alerts:read":       ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO", "FINANCEIRO", "ELABORADOR"],
-    "projects:create":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
-    "projects:update":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
-    "projects:delete":   ["SUPER_ADMIN", "DIRETORIA"],
-    "stats:read":        ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO"],
+    "expenses:create":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "FINANCEIRO"],
+    "documents:create":  ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "DOCUMENTAL"],
+    "audit-logs:read":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "MONITORAMENTO"],
+    "alerts:read":       ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO", "FINANCEIRO", "ELABORADOR"],
+    "projects:create":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
+    "projects:update":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
+    "projects:delete":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA"],
+    "stats:read":        ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO"],
   };
 
   const can = (permission: string) => (req: any, res: any, next: any) => {
@@ -251,7 +253,7 @@ async function startServer() {
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) return res.status(401).json({ error: "Credenciais inválidas" });
 
-      const validPassword = await bcrypt.compare(password, user.password);
+      const validPassword = await bcrypt.compare(password, user.passwordHash);
       if (!validPassword) return res.status(401).json({ error: "Credenciais inválidas" });
 
       const accessToken = jwt.sign(
@@ -659,6 +661,136 @@ async function startServer() {
     } catch (error) {
       console.error("[PATCH /api/documents/:id]", error);
       res.status(400).json({ error: "Erro ao atualizar documento" });
+    }
+  });
+
+  app.delete("/api/documents/:id", authenticate, can("documents:create"), async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.document.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Documento não encontrado" });
+
+      await prisma.document.delete({ where: { id } });
+
+      await auditService.log({
+        userId: req.user.id,
+        projectId: existing.projectId || undefined,
+        acao: "DELETE",
+        entidade: "Document",
+        entidadeId: id,
+        antes: existing,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("[DELETE /api/documents/:id]", error);
+      res.status(500).json({ error: "Erro ao deletar documento" });
+    }
+  });
+
+  // ── Editais CRUD ─────────────────────────────────────────────────────────
+  const editalAllowlist = [
+    "nome", "financiador", "valorMax", "prazo", "status",
+    "aderencia", "categoria", "linha", "porte", "link", "observacao", "area"
+  ];
+
+  const sanitizeEditalData = (body: any) => {
+    const sanitized: any = {};
+    editalAllowlist.forEach(field => {
+      if (body[field] !== undefined) {
+        if (field === "prazo" && body[field]) {
+          sanitized[field] = new Date(body[field]);
+        } else if (field === "valorMax") {
+          sanitized[field] = parseFloat(body[field]) || 0;
+        } else if (field === "aderencia") {
+          sanitized[field] = parseInt(body[field]) || 3;
+        } else {
+          sanitized[field] = body[field];
+        }
+      }
+    });
+    return sanitized;
+  };
+
+  app.get("/api/editais", authenticate, async (req, res) => {
+    try {
+      const editais = await prisma.edital.findMany({ orderBy: { createdAt: "desc" } });
+      res.json(editais);
+    } catch (error) {
+      console.error("[GET /api/editais]", error);
+      res.status(500).json({ error: "Erro ao buscar editais" });
+    }
+  });
+
+  app.post("/api/editais", authenticate, async (req: any, res: any) => {
+    try {
+      const { nome, financiador } = req.body;
+      if (!nome || !financiador) {
+        return res.status(400).json({ error: "Nome e financiador são obrigatórios" });
+      }
+      const sanitized = sanitizeEditalData(req.body);
+      const edital = await prisma.edital.create({ data: sanitized });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "CREATE",
+        entidade: "Edital",
+        entidadeId: edital.id,
+        depois: edital,
+      });
+
+      res.status(201).json(edital);
+    } catch (error) {
+      console.error("[POST /api/editais]", error);
+      res.status(400).json({ error: "Erro ao criar edital" });
+    }
+  });
+
+  app.patch("/api/editais/:id", authenticate, async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.edital.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Edital não encontrado" });
+
+      const sanitized = sanitizeEditalData(req.body);
+      const updated = await prisma.edital.update({ where: { id }, data: sanitized });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "UPDATE",
+        entidade: "Edital",
+        entidadeId: id,
+        antes: existing,
+        depois: updated,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("[PATCH /api/editais/:id]", error);
+      res.status(400).json({ error: "Erro ao atualizar edital" });
+    }
+  });
+
+  app.delete("/api/editais/:id", authenticate, async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.edital.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Edital não encontrado" });
+
+      await prisma.edital.delete({ where: { id } });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "DELETE",
+        entidade: "Edital",
+        entidadeId: id,
+        antes: existing,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("[DELETE /api/editais/:id]", error);
+      res.status(500).json({ error: "Erro ao deletar edital" });
     }
   });
 
