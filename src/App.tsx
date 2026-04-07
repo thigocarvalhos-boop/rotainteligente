@@ -756,7 +756,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card title="Parecer Técnico Interno (PTI)">
                   <div className="space-y-4">
-                    {project.ptCriterios.map(c => (
+                    {(project.ptCriterios || []).map(c => (
                       <div key={c.critério}>
                         <div className="flex justify-between items-center mb-1.5">
                           <span className="text-xs font-bold text-slate-700">{c.critério}</span>
@@ -778,7 +778,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
                 <Card title="Radar de Maturidade">
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart data={project.ptCriterios}>
+                      <RadarChart data={project.ptCriterios || []}>
                         <PolarGrid stroke="#e2e8f0" />
                         <PolarAngleAxis dataKey="critério" tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }} />
                         <Radar 
@@ -867,7 +867,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
           {activeTab === "docs" && (
             <Card title="Checklist Documental">
               <div className="space-y-1">
-                {project.docs.map((doc, idx) => (
+                {(project.docs || []).map((doc, idx) => (
                   <div key={idx} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
                     <div className="flex items-center gap-3">
                       {doc.status === "Aprovado" ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5 text-amber-500" />}
@@ -1055,7 +1055,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
               <Card title="Indicadores de Desempenho do Projeto">
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={project.metas}>
+                    <BarChart data={project.metas || []}>
                       <XAxis dataKey="indicador" fontSize={10} axisLine={false} tickLine={false} />
                       <YAxis fontSize={10} axisLine={false} tickLine={false} />
                       <Tooltip 
@@ -1084,7 +1084,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
             <div className="space-y-6">
               <Card title="Linha do Tempo Institucional">
                 <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
-                  {project.historico.map((h, idx) => (
+                  {(project.historico || []).map((h, idx) => (
                     <div key={idx} className="relative">
                       <div className="absolute -left-8 top-1.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-600 flex items-center justify-center z-10">
                         <div className="w-2 h-2 rounded-full bg-indigo-600" />

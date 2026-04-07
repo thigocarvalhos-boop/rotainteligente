@@ -309,14 +309,20 @@ async function startServer() {
         include: {
           responsavel: true,
           alerts: true,
-          metas: true,
-          etapas: true,
-          docs: true,
-          expenses: { include: { cotacoes: true } },
-          compliance: true
+          documents: true,
+          complianceChecks: true,
+          auditLogs: { include: { user: true } },
         }
       });
-      res.json(projects);
+      // Map relation names to match frontend interface and ensure non-null arrays for Json fields
+      const mapped = projects.map(({ documents, ...rest }) => ({
+        ...rest,
+        docs: documents,
+        ptCriterios: Array.isArray(rest.ptCriterios) ? rest.ptCriterios : [],
+        historico: Array.isArray(rest.historico) ? rest.historico : [],
+        changeLog: Array.isArray(rest.changeLog) ? rest.changeLog : [],
+      }));
+      res.json(mapped);
     } catch (error) {
       console.error("[GET /api/projects]", error);
       res.status(500).json({ error: "Erro ao buscar projetos" });
