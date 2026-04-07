@@ -1,33 +1,93 @@
-// src/api/client.ts
+// Importing necessary modules and initializing axios
+import axios from 'axios';
 
-// This file includes the bug fix for the updateProject method, including ID validation and specific error handling.
-
-const updateProject = async (projectId, projectData) => {
-    // Validate project ID
-    if (!projectId || typeof projectId !== 'string') {
-        throw new Error('Invalid project ID');
+const apiClient = axios.create({
+    baseURL: 'https://api.example.com/',
+    headers: {
+        'Content-Type': 'application/json',
     }
+});
 
-    try {
-        const response = await apiClient.put(`/projects/${projectId}`, projectData);
-        return response.data;
-    } catch (error) {
-        // Handle specific HTTP status codes
-        if (error.response) {
-            switch (error.response.status) {
-                case 400:
-                    throw new Error('Bad Request: Please check your input.');
-                case 403:
-                    throw new Error('Forbidden: You do not have permission to update this project.');
-                case 404:
-                    throw new Error('Not Found: Project does not exist.');
-                default:
-                    throw new Error('An unexpected error occurred.');
-            }
-        } else {
-            throw new Error('Network error: Unable to connect to the server.');
-        }
-    }
+// Login method
+export const login = async (username, password) => {
+    const response = await apiClient.post('/login', { username, password });
+    return response.data;
 };
 
-export default updateProject;
+// Get projects
+export const getProjects = async () => {
+    const response = await apiClient.get('/projects');
+    return response.data;
+};
+
+// Create project
+export const createProject = async (projectData) => {
+    const response = await apiClient.post('/projects', projectData);
+    return response.data;
+};
+
+// Get alerts
+export const getAlerts = async () => {
+    const response = await apiClient.get('/alerts');
+    return response.data;
+};
+
+// Read an alert
+export const readAlert = async (alertId) => {
+    const response = await apiClient.get(`/alerts/${alertId}`);
+    return response.data;
+};
+
+// Resolve an alert
+export const resolveAlert = async (alertId) => {
+    const response = await apiClient.patch(`/alerts/${alertId}/resolve`);
+    return response.data;
+};
+
+// Create expense
+export const createExpense = async (expenseData) => {
+    const response = await apiClient.post('/expenses', expenseData);
+    return response.data;
+};
+
+// Upload document
+export const uploadDocument = async (documentData) => {
+    const formData = new FormData();
+    formData.append('file', documentData);
+    const response = await apiClient.post('/documents/upload', formData, {
+        headers: {
+            'Content-Type': 'multipart/form-data',
+        },
+    });
+    return response.data;
+};
+
+// Get audit logs
+export const getAuditLogs = async () => {
+    const response = await apiClient.get('/audit-logs');
+    return response.data;
+};
+
+// Get documents
+export const getDocuments = async () => {
+    const response = await apiClient.get('/documents');
+    return response.data;
+};
+
+// Get stats
+export const getStats = async () => {
+    const response = await apiClient.get('/stats');
+    return response.data;
+};
+
+// Health check
+export const getHealth = async () => {
+    const response = await apiClient.get('/health');
+    return response.data;
+};
+
+// Token refresh logic
+export const refreshToken = async (token) => {
+    const response = await apiClient.post('/token/refresh', { token });
+    return response.data;
+};
