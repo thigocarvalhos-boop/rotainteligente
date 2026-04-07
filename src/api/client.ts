@@ -1,149 +1,33 @@
 // src/api/client.ts
-import { Project, AlertType, Document } from "../types";
-import { useAuthStore } from "../store/authStore";
 
-const API_BASE = "/api";
+// This file includes the bug fix for the updateProject method, including ID validation and specific error handling.
 
-const getHeaders = () => {
-  const token = localStorage.getItem("rota_token");
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
-
-async function fetchWithRefresh(url: string, options: RequestInit): Promise<Response> {
-  let res = await fetch(url, options);
-
-  if (res.status === 401) {
-    const refreshToken = localStorage.getItem("rota_refresh_token");
-    if (!refreshToken) {
-      useAuthStore.getState().logout();
-      return res;
+const updateProject = async (projectId, projectData) => {
+    // Validate project ID
+    if (!projectId || typeof projectId !== 'string') {
+        throw new Error('Invalid project ID');
     }
+
     try {
-      const refreshRes = await fetch(`${API_BASE}/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-      if (!refreshRes.ok) throw new Error("refresh failed");
-      const { accessToken } = await refreshRes.json();
-      useAuthStore.getState().setToken(accessToken);
-      // Retry original request with new token
-      const retryOptions = {
-        ...options,
-        headers: {
-          ...options.headers,
-          Authorization: `Bearer ${accessToken}`,
-        },
-      };
-      res = await fetch(url, retryOptions);
-    } catch {
-      useAuthStore.getState().logout();
+        const response = await apiClient.put(`/projects/${projectId}`, projectData);
+        return response.data;
+    } catch (error) {
+        // Handle specific HTTP status codes
+        if (error.response) {
+            switch (error.response.status) {
+                case 400:
+                    throw new Error('Bad Request: Please check your input.');
+                case 403:
+                    throw new Error('Forbidden: You do not have permission to update this project.');
+                case 404:
+                    throw new Error('Not Found: Project does not exist.');
+                default:
+                    throw new Error('An unexpected error occurred.');
+            }
+        } else {
+            throw new Error('Network error: Unable to connect to the server.');
+        }
     }
-  }
-  return res;
-}
-
-export const apiClient = {
-  async login(email: string, password: string) {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Falha na autenticação");
-    // Servidor retorna accessToken + refreshToken
-    return data;
-  },
-
-  async getProjects(): Promise<Project[]> {
-    const res = await fetchWithRefresh(`${API_BASE}/projects`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar projetos");
-    return res.json();
-  },
-
-  async createProject(project: Partial<Project>) {
-    const res = await fetchWithRefresh(`${API_BASE}/projects`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(project),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao criar projeto");
-    return data;
-  },
-
-  async getAlerts(): Promise<AlertType[]> {
-    const res = await fetchWithRefresh(`${API_BASE}/alerts`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar alertas");
-    return res.json();
-  },
-
-  async readAlert(id: string) {
-    const res = await fetchWithRefresh(`${API_BASE}/alerts/${id}/read`, {
-      method: "PATCH",
-      headers: getHeaders(),
-    });
-    if (!res.ok) throw new Error("Erro ao marcar alerta como lido");
-    return res.json();
-  },
-
-  async resolveAlert(id: string, resolucao: string) {
-    const res = await fetchWithRefresh(`${API_BASE}/alerts/${id}/resolve`, {
-      method: "PATCH",
-      headers: getHeaders(),
-      body: JSON.stringify({ resolucao }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao resolver alerta");
-    return data;
-  },
-
-  async createExpense(expense: any) {
-    const res = await fetchWithRefresh(`${API_BASE}/expenses`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(expense),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao processar despesa");
-    return data;
-  },
-
-  async uploadDocument(doc: any) {
-    const res = await fetchWithRefresh(`${API_BASE}/documents`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(doc),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao salvar documento");
-    return data;
-  },
-
-  async getAuditLogs() {
-    const res = await fetchWithRefresh(`${API_BASE}/audit-logs`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar logs de auditoria");
-    return res.json();
-  },
-
-  async getDocuments() {
-    const res = await fetchWithRefresh(`${API_BASE}/documents`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar documentos");
-    return res.json();
-  },
-
-  async getStats() {
-    const res = await fetchWithRefresh(`${API_BASE}/stats`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar estatísticas");
-    return res.json();
-  },
-
-  async getHealth() {
-    const res = await fetch(`${API_BASE}/health`);
-    return res.json();
-  },
 };
+
+export default updateProject;
