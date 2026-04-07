@@ -76,6 +76,17 @@ export const apiClient = {
     return data;
   },
 
+  async updateProject(id: string, project: Partial<Project>) {
+    const res = await fetchWithRefresh(`${API_BASE}/projects/${id}`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(project),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erro ao atualizar projeto");
+    return data;
+  },
+
   async getAlerts(): Promise<AlertType[]> {
     const res = await fetchWithRefresh(`${API_BASE}/alerts`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Erro ao buscar alertas");
