@@ -27,8 +27,8 @@ export const auditService = {
           acao,
           entidade,
           entidadeId,
-          antes: antes ? JSON.stringify(antes) : null,
-          depois: depois ? JSON.stringify(depois) : null,
+          antes: antes ?? undefined,
+          depois: depois ?? undefined,
         },
       });
     } catch (error) {

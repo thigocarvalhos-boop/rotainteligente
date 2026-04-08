@@ -87,6 +87,17 @@ export const apiClient = {
     return data;
   },
 
+  async updateDocument(id: string, doc: any) {
+    const res = await fetchWithRefresh(`${API_BASE}/documents/${id}`, {
+      method: "PATCH",
+      headers: getHeaders(),
+      body: JSON.stringify(doc),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erro ao atualizar documento");
+    return data;
+  },
+
   async getAlerts(): Promise<AlertType[]> {
     const res = await fetchWithRefresh(`${API_BASE}/alerts`, { headers: getHeaders() });
     if (!res.ok) throw new Error("Erro ao buscar alertas");
@@ -133,78 +144,6 @@ export const apiClient = {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erro ao salvar documento");
     return data;
-  },
-
-  async updateDocument(id: string, doc: any) {
-    const res = await fetchWithRefresh(`${API_BASE}/documents/${id}`, {
-      method: "PATCH",
-      headers: getHeaders(),
-      body: JSON.stringify(doc),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao atualizar documento");
-    return data;
-  },
-
-  async deleteProject(id: string): Promise<void> {
-    const res = await fetchWithRefresh(`${API_BASE}/projects/${id}`, {
-      method: "DELETE",
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Erro ao excluir projeto");
-    }
-  },
-
-  async deleteDocument(id: string): Promise<void> {
-    const res = await fetchWithRefresh(`${API_BASE}/documents/${id}`, {
-      method: "DELETE",
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Erro ao excluir documento");
-    }
-  },
-
-  async getEditais() {
-    const res = await fetchWithRefresh(`${API_BASE}/editais`, { headers: getHeaders() });
-    if (!res.ok) throw new Error("Erro ao buscar editais");
-    return res.json();
-  },
-
-  async createEdital(edital: any) {
-    const res = await fetchWithRefresh(`${API_BASE}/editais`, {
-      method: "POST",
-      headers: getHeaders(),
-      body: JSON.stringify(edital),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao criar edital");
-    return data;
-  },
-
-  async updateEdital(id: string, edital: any) {
-    const res = await fetchWithRefresh(`${API_BASE}/editais/${id}`, {
-      method: "PATCH",
-      headers: getHeaders(),
-      body: JSON.stringify(edital),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Erro ao atualizar edital");
-    return data;
-  },
-
-  async deleteEdital(id: string): Promise<void> {
-    const res = await fetchWithRefresh(`${API_BASE}/editais/${id}`, {
-      method: "DELETE",
-      headers: getHeaders(),
-    });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      throw new Error(data.error || "Erro ao excluir edital");
-    }
   },
 
   async getAuditLogs() {
