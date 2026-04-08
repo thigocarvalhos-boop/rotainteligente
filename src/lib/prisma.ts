@@ -12,6 +12,14 @@ function createPrismaClient(): PrismaClient {
   return client;
 }
 
+if (!process.env.DATABASE_URL) {
+  const msg = "[FATAL] Nenhuma variável DATABASE_URL ou URL_DO_BANCO_DE_DADOS encontrada.";
+  console.error(msg);
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(msg);
+  }
+}
+
 export const prisma =
   globalForPrisma.prisma ?? createPrismaClient();
 
