@@ -1,7 +1,8 @@
 {
-  "name": "rota-inteligente-api",
-  "version": "1.0.0",
+  "name": "rota-sistema",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "prisma generate && vite build",

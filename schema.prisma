@@ -1,0 +1,184 @@
+// prisma/schema.prisma
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  DIRETORIA
+  COORDENACAO
+  ELABORADOR
+  DOCUMENTAL
+  FINANCEIRO
+  MONITORAMENTO
+  LEITURA
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(LEITURA)
+  projects  Project[] @relation("ProjectResponsible")
+  auditLogs AuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Project {
+  id              String   @id @default(uuid())
+  nome            String
+  edital          String
+  financiador     String
+  area            String
+  valor           Float
+  status          String
+  prazo           DateTime
+  responsavelId   String
+  responsavel     User     @relation("ProjectResponsible", fields: [responsavelId], references: [id])
+  probabilidade   Int
+  risco           String
+  aderencia       Int
+  territorio      String
+  publico         String
+  competitividade String
+  proximoPasso    String
+  ptScore         Float
+  
+  observacao         String?
+  ano                Int?
+  categoriaEdital    String?
+  programaInterno    String?
+  vigenciaInicio     DateTime?
+  vigenciaFim        DateTime?
+  progressoFisico    Float?
+  progressoFinanceiro Float?
+  scoreCompliance    Float?
+  scoreRiscoGlosa    Float?
+  ptCriterios        Json?
+  historico          Json?
+  changeLog          Json?
+
+  metas           Meta[]
+  etapas          Etapa[]
+  expenses        Expense[]
+  docs            Document[]
+  compliance      ComplianceCheck[]
+  alerts          Alert[]
+  auditLogs       AuditLog[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Meta {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  descricao String
+  indicador String
+  meta      Float
+  alcancado Float
+  unidade   String
+  budget    Float    @default(0)
+  expenses  Expense[] @relation("ExpenseMeta")
+}
+
+model Etapa {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  nome      String
+  inicio    DateTime
+  fim       DateTime
+  status    String
+  peso      Float
+  expenses  Expense[] @relation("ExpenseEtapa")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  descricao   String
+  valor       Float
+  data        DateTime
+  categoria   String
+  status      String
+  justificativa String?
+  vincMetaId  String
+  vincEtapaId String
+  vincMeta    Meta     @relation("ExpenseMeta", fields: [vincMetaId], references: [id])
+  vincEtapa   Etapa    @relation("ExpenseEtapa", fields: [vincEtapaId], references: [id])
+  cotacoes    Cotacao[]
+}
+
+model Cotacao {
+  id          String   @id @default(uuid())
+  expenseId   String
+  expense     Expense  @relation(fields: [expenseId], references: [id])
+  fornecedor  String
+  valor       Float
+  data        DateTime
+  vencedora   Boolean
+  docUrl      String?
+}
+
+model Document {
+  id        String   @id @default(uuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  nome      String
+  status    String
+  validade  DateTime?
+  url       String?
+}
+
+model ComplianceCheck {
+  id        String   @id @default(uuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id])
+  item      String
+  status    String
+  data      DateTime @default(now())
+}
+
+model Alert {
+  id        String   @id @default(uuid())
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id])
+  titulo    String
+  mensagem  String
+  nivel     String   // N1, N2, N3, N4
+  status    String   // PENDENTE, RESOLVIDO
+  tipo      String   // DOCUMENTO, ORCAMENTO, CRONOGRAMA, GERAL
+  prazo     DateTime?
+  lido      Boolean  @default(false)
+  lidoEm    DateTime?
+  lidoPor   String?
+  resolucao String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id])
+  acao       String
+  entidade   String   // Project, Expense, Document, etc.
+  entidadeId String?
+  antes      String?  // JSON string of data before change
+  depois     String?  // JSON string of data after change
+  data       DateTime @default(now())
+}
