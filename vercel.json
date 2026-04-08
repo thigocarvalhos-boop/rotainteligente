@@ -1,0 +1,6 @@
+{
+  "buildCommand": "npx prisma@6.4.1 generate && npx prisma@6.4.1 migrate deploy && vite build",
+  "outputDirectory": "dist",
+  "installCommand": "npm install",
+  "framework": null
+}
