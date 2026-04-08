@@ -1,17 +1,17 @@
-import { PrismaClient, UserRole, ProjectStatus, RiskLevel } from "@prisma/client";
-import bcrypt from "bcrypt";
+import { PrismaClient, UserRole } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash("admin123", 10);
+  const passwordHash = await bcrypt.hash("admin123", 12);
 
   const admin = await prisma.user.upsert({
-    where: { email: "admin@rota.local" },
+    where: { email: "admin@guiasocial.org" },
     update: {},
     create: {
-      name: "Administrador Rota",
-      email: "admin@rota.local",
+      name: "Administrador ROTA",
+      email: "admin@guiasocial.org",
       passwordHash,
       role: UserRole.ADMIN,
     },
@@ -36,8 +36,8 @@ async function main() {
       financiador: "Instituição Exemplo",
       area: "Digital",
       valor: 150000,
-      status: ProjectStatus.TRIAGEM,
-      risco: RiskLevel.MEDIO,
+      status: "Triagem",
+      risco: "Médio",
       probabilidade: 72,
       editalId: edital.id,
       responsavelId: admin.id,

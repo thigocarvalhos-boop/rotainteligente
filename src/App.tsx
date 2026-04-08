@@ -14,10 +14,10 @@ import {
   Search, ChevronRight, AlertCircle, CheckCircle2, Clock, ExternalLink,
   Download, ArrowLeft, Calendar, FileText, TrendingUp, ShieldCheck,
   Info, RefreshCw, Eye, Plus, X, Upload, Save, ChevronLeft,
-  Link2, Award, Target, Zap, BookOpen, Edit2, Trash2
+  Link2, Award, Target, Zap, BookOpen, Edit2, Trash2, LogOut
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { B, EDITAIS } from "./mockData";
+import { B } from "./mockData";
 import { Project, ProjectStatus, AlertType, Edital } from "./types";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -27,6 +27,102 @@ import { apiClient } from "./api/client";
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
+}
+
+// ── Toast types ──────────────────────────────────────────────────────────────
+type ToastType = "success" | "error" | "info";
+interface ToastItem { id: string; msg: string; type: ToastType; }
+
+// ── SkeletonCard ─────────────────────────────────────────────────────────────
+function SkeletonCard({ lines = 3 }: { lines?: number }) {
+  return (
+    <div className="bg-white rounded-xl border border-slate-100 p-5 space-y-3 animate-pulse">
+      {Array.from({ length: lines }).map((_, i) => (
+        <div key={i} className={cn(
+          "h-3 bg-slate-100 rounded",
+          i === 0 ? "w-3/4" : i === 1 ? "w-full" : "w-1/2"
+        )} />
+      ))}
+    </div>
+  );
+}
+
+// ── ToastContainer ───────────────────────────────────────────────────────────
+function ToastContainer({ toasts, onRemove }: { toasts: ToastItem[]; onRemove: (id: string) => void }) {
+  return (
+    <div className="fixed bottom-6 right-6 z-[300] space-y-2">
+      <AnimatePresence>
+        {toasts.map(t => (
+          <motion.div
+            key={t.id}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className={cn(
+              "flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg text-white text-sm font-medium min-w-[280px] max-w-sm",
+              t.type === "success" && "bg-emerald-600",
+              t.type === "error" && "bg-red-600",
+              t.type === "info" && "bg-slate-800"
+            )}
+          >
+            {t.type === "success" && <CheckCircle2 className="w-4 h-4 shrink-0" />}
+            {t.type === "error" && <AlertCircle className="w-4 h-4 shrink-0" />}
+            {t.type === "info" && <Info className="w-4 h-4 shrink-0" />}
+            <span className="flex-1">{t.msg}</span>
+            <button onClick={() => onRemove(t.id)} className="shrink-0 hover:opacity-70"><X className="w-4 h-4" /></button>
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── ModalConfirmar ───────────────────────────────────────────────────────────
+function ModalConfirmar({ titulo, descricao, onConfirmar, onCancelar, loading }: {
+  titulo: string;
+  descricao: string;
+  onConfirmar: () => void;
+  onCancelar: () => void;
+  loading?: boolean;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !loading) onCancelar(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [loading, onCancelar]);
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/40 flex items-center justify-center p-4">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 text-center"
+      >
+        <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+          <AlertCircle className="w-7 h-7 text-red-600" />
+        </div>
+        <h3 className="text-lg font-bold text-slate-900 mb-2">{titulo}</h3>
+        <p className="text-sm text-slate-500 mb-6">{descricao}</p>
+        <div className="flex gap-3">
+          <button
+            onClick={onCancelar}
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 border border-slate-200 rounded-lg text-sm font-bold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={onConfirmar}
+            disabled={loading}
+            className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg text-sm font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {loading && <RefreshCw className="w-4 h-4 animate-spin" />}
+            Excluir
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
 }
 
 function formatDate(value: string | null | undefined): string {
@@ -524,12 +620,14 @@ function PipelineView({ projects, onProject, onNewProject, onEditProject }: { pr
   );
 }
 
-function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditProject }: {
+function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditProject, onDeleteProject, showToast }: {
   project: Project;
   onBack: () => void;
   onAddDoc: (projectId: string, projectName: string) => void;
   onUpdateStatus: (project: Project) => void;
   onEditProject: (project: Project) => void;
+  onDeleteProject: (project: Project) => void;
+  showToast: (msg: string, type?: ToastType) => void;
 }) {
   const [activeTab, setActiveTab] = useState("geral");
   
@@ -552,12 +650,20 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
           <ArrowLeft className="w-4 h-4" />
           Voltar ao Pipeline
         </button>
-        <button
-          onClick={() => onEditProject(project)}
-          className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
-        >
-          <Edit2 className="w-4 h-4" /> Editar Projeto
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => onDeleteProject(project)}
+            className="flex items-center gap-2 px-4 py-2 border border-red-200 text-red-600 rounded-lg text-sm font-bold hover:bg-red-50 transition-colors"
+          >
+            <Trash2 className="w-4 h-4" /> Excluir Projeto
+          </button>
+          <button
+            onClick={() => onEditProject(project)}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200"
+          >
+            <Edit2 className="w-4 h-4" /> Editar Projeto
+          </button>
+        </div>
       </div>
 
       {/* Header Card */}
@@ -650,7 +756,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <Card title="Parecer Técnico Interno (PTI)">
                   <div className="space-y-4">
-                    {project.ptCriterios.map(c => (
+                    {(project.ptCriterios || []).map(c => (
                       <div key={c.critério}>
                         <div className="flex justify-between items-center mb-1.5">
                           <span className="text-xs font-bold text-slate-700">{c.critério}</span>
@@ -672,7 +778,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
                 <Card title="Radar de Maturidade">
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
-                      <RadarChart data={project.ptCriterios}>
+                      <RadarChart data={project.ptCriterios || []}>
                         <PolarGrid stroke="#e2e8f0" />
                         <PolarAngleAxis dataKey="critério" tick={{ fontSize: 10, fill: '#64748b', fontWeight: 600 }} />
                         <Radar 
@@ -761,7 +867,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
           {activeTab === "docs" && (
             <Card title="Checklist Documental">
               <div className="space-y-1">
-                {project.docs.map((doc, idx) => (
+                {(project.docs || []).map((doc, idx) => (
                   <div key={idx} className="flex items-center justify-between p-4 hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0">
                     <div className="flex items-center gap-3">
                       {doc.status === "Aprovado" ? <CheckCircle2 className="w-5 h-5 text-emerald-500" /> : <Clock className="w-5 h-5 text-amber-500" />}
@@ -949,7 +1055,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
               <Card title="Indicadores de Desempenho do Projeto">
                 <div className="h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={project.metas}>
+                    <BarChart data={project.metas || []}>
                       <XAxis dataKey="indicador" fontSize={10} axisLine={false} tickLine={false} />
                       <YAxis fontSize={10} axisLine={false} tickLine={false} />
                       <Tooltip 
@@ -978,7 +1084,7 @@ function ProjectDetailView({ project, onBack, onAddDoc, onUpdateStatus, onEditPr
             <div className="space-y-6">
               <Card title="Linha do Tempo Institucional">
                 <div className="relative pl-8 space-y-8 before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-100">
-                  {project.historico.map((h, idx) => (
+                  {(project.historico || []).map((h, idx) => (
                     <div key={idx} className="relative">
                       <div className="absolute -left-8 top-1.5 w-6 h-6 rounded-full bg-white border-2 border-indigo-600 flex items-center justify-center z-10">
                         <div className="w-2 h-2 rounded-full bg-indigo-600" />
@@ -1142,30 +1248,96 @@ function EditalCard({ edital }: { edital: Edital }) {
   );
 }
 
-function EditaisView({ onNewProject }: { onNewProject: (prefill?: Partial<Edital>) => void }) {
+function EditaisView({ onNewProject, showToast }: { onNewProject: (prefill?: Partial<Edital>) => void; showToast: (msg: string, type?: ToastType) => void }) {
   const [search, setSearch] = useState("");
-  const [editais, setEditais] = useState<Edital[]>(EDITAIS);
+  const [editais, setEditais] = useState<Edital[]>([]);
+  const [loadingEditais, setLoadingEditais] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [editingEdital, setEditingEdital] = useState<Edital | null>(null);
+  const [confirmDel, setConfirmDel] = useState<Edital | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [formEdital, setFormEdital] = useState({ nome:"", financiador:"", valorMax:"", prazo:"", status:"Aberto", aderencia:"3", categoria:"Fundo Municipal", linha:"", porte:"Médio", link:"", observacao:"" });
   const setF = (k: string, v: string) => setFormEdital(f => ({ ...f, [k]: v }));
+
+  const loadEditais = async () => {
+    setLoadingEditais(true);
+    try {
+      const data = await apiClient.getEditais();
+      setEditais(data);
+    } catch (e: any) {
+      showToast(e.message || "Erro ao carregar editais", "error");
+    } finally {
+      setLoadingEditais(false);
+    }
+  };
+
+  useEffect(() => { loadEditais(); }, []);
+
+  const openEdit = (e: Edital) => {
+    setEditingEdital(e);
+    setFormEdital({
+      nome: e.nome, financiador: e.financiador, valorMax: String(e.valorMax||""),
+      prazo: e.prazo ? new Date(e.prazo).toISOString().split("T")[0] : "",
+      status: e.status, aderencia: String(e.aderencia), categoria: e.categoria,
+      linha: e.linha||"", porte: e.porte||"Médio", link: e.link||"", observacao: e.observacao||""
+    });
+    setShowForm(true);
+  };
+
+  const openNew = () => {
+    setEditingEdital(null);
+    setFormEdital({ nome:"", financiador:"", valorMax:"", prazo:"", status:"Aberto", aderencia:"3", categoria:"Fundo Municipal", linha:"", porte:"Médio", link:"", observacao:"" });
+    setShowForm(true);
+  };
 
   const filtered = editais.filter(e =>
     e.nome.toLowerCase().includes(search.toLowerCase()) ||
     e.financiador.toLowerCase().includes(search.toLowerCase())
   );
 
-  const salvarEdital = () => {
-    if (!formEdital.nome || !formEdital.financiador) return;
-    const novo: Edital = {
-      id: `ED-${Date.now()}`, nome: formEdital.nome, financiador: formEdital.financiador,
-      valorMax: parseFloat(formEdital.valorMax)||0, prazo: formEdital.prazo,
-      status: formEdital.status as "Aberto"|"Encerrado"|"Em análise",
-      aderencia: parseInt(formEdital.aderencia), categoria: formEdital.categoria,
-      linha: formEdital.linha, porte: formEdital.porte as "Micro"|"Pequeno"|"Médio"|"Grande",
-      link: formEdital.link||undefined, observacao: formEdital.observacao||undefined,
-    };
-    setEditais(prev => [novo, ...prev]);
-    setShowForm(false);
+  const salvarEdital = async () => {
+    if (!formEdital.nome.trim() || !formEdital.financiador.trim()) { showToast("Nome e financiador são obrigatórios", "error"); return; }
+    setSaving(true);
+    try {
+      const payload: any = {
+        nome: formEdital.nome.trim(), financiador: formEdital.financiador.trim(),
+        valorMax: parseFloat(formEdital.valorMax)||0,
+        prazo: formEdital.prazo ? new Date(formEdital.prazo).toISOString() : null,
+        status: formEdital.status, aderencia: parseInt(formEdital.aderencia)||3,
+        categoria: formEdital.categoria, linha: formEdital.linha.trim()||null,
+        porte: formEdital.porte, link: formEdital.link.trim()||null, observacao: formEdital.observacao.trim()||null,
+      };
+      if (editingEdital) {
+        await apiClient.updateEdital(editingEdital.id, payload);
+        showToast("Edital atualizado com sucesso");
+      } else {
+        await apiClient.createEdital(payload);
+        showToast("Edital criado com sucesso");
+      }
+      setShowForm(false);
+      setEditingEdital(null);
+      loadEditais();
+    } catch (e: any) {
+      showToast(e.message || "Erro ao salvar edital", "error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const excluirEdital = async () => {
+    if (!confirmDel) return;
+    setDeleting(true);
+    try {
+      await apiClient.deleteEdital(confirmDel.id);
+      showToast("Edital excluído com sucesso");
+      setConfirmDel(null);
+      loadEditais();
+    } catch (e: any) {
+      showToast(e.message || "Erro ao excluir edital", "error");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -1176,7 +1348,7 @@ function EditaisView({ onNewProject }: { onNewProject: (prefill?: Partial<Edital
           <p className="text-slate-500 text-sm">Oportunidades mapeadas e em monitoramento</p>
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
+          <button onClick={openNew} className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-lg shadow-indigo-200">
             <Plus className="w-4 h-4" />Novo Edital
           </button>
           <div className="relative">
@@ -1187,7 +1359,7 @@ function EditaisView({ onNewProject }: { onNewProject: (prefill?: Partial<Edital
       </div>
 
       {showForm && (
-        <Modal title="Novo Edital" onClose={() => setShowForm(false)} wide>
+        <Modal title={editingEdital ? `Editar Edital — ${editingEdital.nome}` : "Novo Edital"} onClose={() => { setShowForm(false); setEditingEdital(null); }} wide>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2"><Field label="Nome do Edital" required><input className={inputCls} value={formEdital.nome} onChange={e=>setF("nome",e.target.value)} placeholder="Ex: Chamamento Público COMDICA 2026" /></Field></div>
             <Field label="Financiador" required><input className={inputCls} value={formEdital.financiador} onChange={e=>setF("financiador",e.target.value)} placeholder="Ex: Prefeitura do Recife" /></Field>
@@ -1200,44 +1372,70 @@ function EditaisView({ onNewProject }: { onNewProject: (prefill?: Partial<Edital
             <div className="md:col-span-2"><Field label="Observações"><textarea className={inputCls} rows={2} value={formEdital.observacao} onChange={e=>setF("observacao",e.target.value)} placeholder="Notas estratégicas..." /></Field></div>
           </div>
           <div className="flex gap-3 mt-4">
-            <button onClick={() => setShowForm(false)} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
-            <button onClick={salvarEdital} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 flex items-center justify-center gap-2"><Save className="w-4 h-4" />Salvar Edital</button>
+            <button onClick={() => { setShowForm(false); setEditingEdital(null); }} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+            <button onClick={salvarEdital} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 flex items-center justify-center gap-2 disabled:opacity-50">
+              {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}{editingEdital ? "Atualizar" : "Salvar Edital"}
+            </button>
           </div>
         </Modal>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filtered.map(e => (
-          <div key={e.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{e.categoria}</span>
-                <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded uppercase", e.status==="Aberto"?"bg-emerald-50 text-emerald-600":e.status==="Em análise"?"bg-amber-50 text-amber-600":"bg-slate-100 text-slate-500")}>{e.status}</span>
-              </div>
-              <h3 className="text-sm font-bold text-slate-900 mb-2 group-hover:text-indigo-700 transition-colors leading-tight">{e.nome}</h3>
-              <p className="text-xs text-slate-500 mb-4 flex items-center gap-1.5"><Library className="w-3.5 h-3.5" />{e.financiador}</p>
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Valor Máx.</p><p className="text-xs font-bold text-slate-800">{fmt(e.valorMax)}</p></div>
-                <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Prazo</p><p className="text-xs font-bold text-red-600">{formatDate(e.prazo)}</p></div>
-              </div>
-              {e.observacao && <p className="text-[10px] text-slate-500 italic mb-3 line-clamp-2">"{e.observacao}"</p>}
-              <div className="flex items-center justify-between pt-4 border-t border-slate-50">
-                <div className="flex items-center gap-1"><span className="text-[10px] font-bold text-slate-400 uppercase">Aderência</span><span className="text-amber-400">{"★".repeat(e.aderencia)}{"☆".repeat(5-e.aderencia)}</span></div>
-                <div className="flex items-center gap-2">
-                  {e.link && <a href={e.link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"><ExternalLink className="w-3.5 h-3.5" />Ver Edital</a>}
-                  {e.status === "Aberto" && <button onClick={() => onNewProject(e)} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 transition-colors"><Plus className="w-3 h-3" />Criar Projeto</button>}
+      {confirmDel && (
+        <ModalConfirmar
+          titulo="Excluir Edital"
+          descricao={`Tem certeza que deseja excluir o edital "${confirmDel.nome}"?`}
+          onConfirmar={excluirEdital}
+          onCancelar={() => setConfirmDel(null)}
+          loading={deleting}
+        />
+      )}
+
+      {loadingEditais ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} lines={5} />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map(e => (
+            <div key={e.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow group">
+              <div className="p-5">
+                <div className="flex justify-between items-start mb-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{e.categoria}</span>
+                  <span className={cn("text-[10px] font-bold px-2 py-0.5 rounded uppercase", e.status==="Aberto"?"bg-emerald-50 text-emerald-600":e.status==="Em análise"?"bg-amber-50 text-amber-600":"bg-slate-100 text-slate-500")}>{e.status}</span>
+                </div>
+                <h3 className="text-sm font-bold text-slate-900 mb-2 group-hover:text-indigo-700 transition-colors leading-tight">{e.nome}</h3>
+                <p className="text-xs text-slate-500 mb-4 flex items-center gap-1.5"><Library className="w-3.5 h-3.5" />{e.financiador}</p>
+                <div className="grid grid-cols-2 gap-4 mb-4">
+                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Valor Máx.</p><p className="text-xs font-bold text-slate-800">{fmt(e.valorMax)}</p></div>
+                  <div><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Prazo</p><p className="text-xs font-bold text-red-600">{formatDate(e.prazo)}</p></div>
+                </div>
+                {e.observacao && <p className="text-[10px] text-slate-500 italic mb-3 line-clamp-2">"{e.observacao}"</p>}
+                <div className="flex items-center justify-between pt-4 border-t border-slate-50">
+                  <div className="flex items-center gap-1"><span className="text-[10px] font-bold text-slate-400 uppercase">Aderência</span><span className="text-amber-400">{"★".repeat(e.aderencia)}{"☆".repeat(5-e.aderencia)}</span></div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => openEdit(e)} className="p-1.5 text-slate-400 hover:text-indigo-600 transition-colors" title="Editar"><Edit2 className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => setConfirmDel(e)} className="p-1.5 text-slate-400 hover:text-red-600 transition-colors" title="Excluir"><Trash2 className="w-3.5 h-3.5" /></button>
+                    {e.link && <a href={e.link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-slate-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"><ExternalLink className="w-3.5 h-3.5" />Ver</a>}
+                    {e.status === "Aberto" && <button onClick={() => onNewProject(e)} className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 bg-indigo-50 px-2 py-1 rounded-lg hover:bg-indigo-100 transition-colors"><Plus className="w-3 h-3" />Criar Projeto</button>}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+          {filtered.length === 0 && !loadingEditais && (
+            <div className="col-span-3 text-center py-12 text-slate-400 text-sm">Nenhum edital encontrado</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-function AlertasView({ alerts }: { alerts: AlertType[] }) {
+function AlertasView({ alerts, showToast, onRefresh }: { alerts: AlertType[]; showToast: (msg: string, type?: ToastType) => void; onRefresh: () => void }) {
   const [mode, setMode] = useState<"lista" | "calendario">("lista");
+  const [resolveAlert, setResolveAlert] = useState<AlertType | null>(null);
+  const [resolucao, setResolucao] = useState("");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const exportar = () => downloadCSV("alertas_rota",
     ["Título","Tipo","Nível","Projeto","Prazo","Dias Restantes"],
@@ -1245,6 +1443,35 @@ function AlertasView({ alerts }: { alerts: AlertType[] }) {
   );
 
   const sorted = [...alerts].sort((a, b) => (a.dias ?? 999) - (b.dias ?? 999));
+
+  const handleRead = async (a: AlertType) => {
+    setActionLoading(a.id);
+    try {
+      await apiClient.readAlert(a.id);
+      showToast("Alerta marcado como lido");
+      onRefresh();
+    } catch (e: any) {
+      showToast(e.message || "Erro ao marcar alerta", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleResolve = async () => {
+    if (!resolveAlert || !resolucao.trim()) { showToast("Descreva a resolução", "error"); return; }
+    setActionLoading(resolveAlert.id);
+    try {
+      await apiClient.resolveAlert(resolveAlert.id, resolucao.trim());
+      showToast("Alerta resolvido com sucesso");
+      setResolveAlert(null);
+      setResolucao("");
+      onRefresh();
+    } catch (e: any) {
+      showToast(e.message || "Erro ao resolver alerta", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -1290,6 +1517,14 @@ function AlertasView({ alerts }: { alerts: AlertType[] }) {
                     <div className="text-right flex-shrink-0">
                       <p className="text-xs font-bold text-slate-800">{a.prazo}</p>
                       <p className="text-[9px] text-slate-400 uppercase font-bold">vencimento</p>
+                      <div className="flex gap-1 mt-2">
+                        <button onClick={() => handleRead(a)} disabled={actionLoading === a.id} className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 transition-colors disabled:opacity-50">
+                          {actionLoading === a.id ? <RefreshCw className="w-3 h-3 animate-spin" /> : "Lido"}
+                        </button>
+                        <button onClick={() => { setResolveAlert(a); setResolucao(""); }} className="text-[10px] font-bold text-emerald-600 hover:text-emerald-800 transition-colors">
+                          Resolver
+                        </button>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -1343,13 +1578,39 @@ function AlertasView({ alerts }: { alerts: AlertType[] }) {
           </Card>
         </div>
       </div>
+
+      {/* Resolve Alert Modal */}
+      {resolveAlert && (
+        <div className="fixed inset-0 z-[200] bg-black/40 flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Resolver Alerta</h3>
+            <p className="text-sm text-slate-500 mb-4">{resolveAlert.titulo || resolveAlert.tipo} — {resolveAlert.projeto}</p>
+            <textarea
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+              rows={3}
+              placeholder="Descreva a resolução (obrigatório)"
+              value={resolucao}
+              onChange={e => setResolucao(e.target.value)}
+            />
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setResolveAlert(null)} className="flex-1 py-2.5 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50">Cancelar</button>
+              <button onClick={handleResolve} disabled={actionLoading === resolveAlert.id || !resolucao.trim()} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-lg text-sm font-bold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {actionLoading === resolveAlert.id && <RefreshCw className="w-4 h-4 animate-spin" />}
+                Resolver
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
 
-function DocumentosView({ documents, onNewDoc }: { documents: any[]; onNewDoc: () => void }) {
+function DocumentosView({ documents, onNewDoc, onEditDoc, showToast, onRefresh }: { documents: any[]; onNewDoc: () => void; onEditDoc: (doc: any) => void; showToast: (msg: string, type?: ToastType) => void; onRefresh: () => void }) {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("Todos");
+  const [confirmDel, setConfirmDel] = useState<any>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const filtered = documents.filter(d => {
     const q = search.toLowerCase();
@@ -1370,8 +1631,32 @@ function DocumentosView({ documents, onNewDoc }: { documents: any[]; onNewDoc: (
   });
   const vencidos = documents.filter(d => d.validade && new Date(d.validade) < new Date());
 
+  const handleDeleteDoc = async () => {
+    if (!confirmDel) return;
+    setDeleting(true);
+    try {
+      await apiClient.deleteDocument(confirmDel.id);
+      showToast("Documento excluído com sucesso");
+      setConfirmDel(null);
+      onRefresh();
+    } catch (e: any) {
+      showToast(e.message || "Erro ao excluir documento", "error");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {confirmDel && (
+        <ModalConfirmar
+          titulo="Excluir Documento"
+          descricao={`Tem certeza que deseja excluir o documento "${confirmDel.nome}"?`}
+          onConfirmar={handleDeleteDoc}
+          onCancelar={() => setConfirmDel(null)}
+          loading={deleting}
+        />
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 font-serif">Gestão Documental</h2>
@@ -1471,6 +1756,12 @@ function DocumentosView({ documents, onNewDoc }: { documents: any[]; onNewDoc: (
                         isVencido ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-600")}>
                         {isVencido ? "Vencido" : doc.status}
                       </span>
+                      <button onClick={() => onEditDoc(doc)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" title="Editar">
+                        <Edit2 className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setConfirmDel(doc)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Excluir">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                       {doc.url ? (
                         <a href={doc.url} target="_blank" rel="noopener noreferrer"
                           title="Abrir documento"
@@ -1817,10 +2108,11 @@ const inputCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm 
 const selectCls = "w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white transition-all";
 
 // ─── MODAL PROJETO (CREATE + EDIT) ────────────────────────────────────────
-function ModalProjet({ project, onClose, onSaved }: {
+function ModalProjet({ project, onClose, onSaved, showToast }: {
   project?: Project | null;   // null/undefined = criar, Project = editar
   onClose: () => void;
   onSaved: () => void;
+  showToast?: (msg: string, type?: ToastType) => void;
 }) {
   const isEdit = Boolean(project?.id);
 
@@ -1832,6 +2124,7 @@ function ModalProjet({ project, onClose, onSaved }: {
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [tab, setTab] = useState<"basico" | "avancado">("basico");
   const [form, setForm] = useState({
     nome:            project?.nome || "",
@@ -1880,13 +2173,22 @@ function ModalProjet({ project, onClose, onSaved }: {
     }
   }, [project?.id]);
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: string) => { setForm(f => ({ ...f, [k]: v })); setFieldErrors(fe => ({ ...fe, [k]: "" })); };
 
   const handleSubmit = async () => {
-    if (!form.nome || !form.financiador || !form.prazo || !form.valor) {
-      setError("Preencha os campos obrigatórios: Nome, Financiador, Valor e Prazo.");
-      return;
-    }
+    const errs: Record<string, string> = {};
+    if (!form.nome.trim()) errs.nome = "Nome é obrigatório";
+    if (!form.financiador.trim()) errs.financiador = "Financiador é obrigatório";
+    if (!form.valor || parseFloat(form.valor) <= 0) errs.valor = "Valor deve ser positivo";
+    if (!form.prazo) errs.prazo = "Prazo é obrigatório";
+    else if (!isEdit && new Date(form.prazo) < new Date()) errs.prazo = "Prazo não pode ser no passado";
+    const ptS = parseFloat(form.ptScore);
+    if (isNaN(ptS) || ptS < 0 || ptS > 10) errs.ptScore = "Nota PT deve estar entre 0 e 10";
+    const prob = parseInt(form.probabilidade);
+    if (isNaN(prob) || prob < 0 || prob > 100) errs.probabilidade = "Probabilidade deve estar entre 0 e 100";
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) { setError("Corrija os campos destacados."); return; }
+
     setSaving(true);
     setError("");
     try {
@@ -1894,20 +2196,23 @@ function ModalProjet({ project, onClose, onSaved }: {
         ...form,
         status:        form.status as ProjectStatus,
         risco:         form.risco as "Baixo" | "Médio" | "Alto",
-        valor:         parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
+        valor:         parseFloat(form.valor) || 0,
         probabilidade: parseInt(form.probabilidade),
         aderencia:     parseInt(form.aderencia),
         ptScore:       parseFloat(form.ptScore),
       };
       if (isEdit && project?.id) {
         await apiClient.updateProject(project.id, payload);
+        showToast?.("Projeto atualizado com sucesso");
       } else {
         await apiClient.createProject(payload);
+        showToast?.("Projeto criado com sucesso");
       }
       onSaved();
       onClose();
     } catch (e: any) {
       setError(e.message || "Erro ao salvar projeto.");
+      showToast?.(e.message || "Erro ao salvar projeto", "error");
     } finally {
       setSaving(false);
     }
@@ -1946,6 +2251,7 @@ function ModalProjet({ project, onClose, onSaved }: {
             <div className="md:col-span-2">
               <Field label="Nome do Projeto" required>
                 <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)} placeholder="Ex: Guia Digital Teen 2026" />
+                {fieldErrors.nome && <p className="text-xs text-red-500 mt-1">{fieldErrors.nome}</p>}
               </Field>
             </div>
             <Field label="Edital / Chamamento">
@@ -1953,12 +2259,15 @@ function ModalProjet({ project, onClose, onSaved }: {
             </Field>
             <Field label="Financiador" required>
               <input className={inputCls} value={form.financiador} onChange={e => set("financiador", e.target.value)} placeholder="Ex: Fundo Municipal da Criança" />
+              {fieldErrors.financiador && <p className="text-xs text-red-500 mt-1">{fieldErrors.financiador}</p>}
             </Field>
             <Field label="Valor Solicitado (R$)" required>
               <input className={inputCls} type="number" value={form.valor} onChange={e => set("valor", e.target.value)} placeholder="Ex: 320000" />
+              {fieldErrors.valor && <p className="text-xs text-red-500 mt-1">{fieldErrors.valor}</p>}
             </Field>
             <Field label="Prazo / Data Limite" required>
               <input className={inputCls} type="date" value={form.prazo} onChange={e => set("prazo", e.target.value)} />
+              {fieldErrors.prazo && <p className="text-xs text-red-500 mt-1">{fieldErrors.prazo}</p>}
             </Field>
             <Field label="Status">
               <select className={selectCls} value={form.status} onChange={e => set("status", e.target.value)}>
@@ -1994,6 +2303,7 @@ function ModalProjet({ project, onClose, onSaved }: {
                 <input className="flex-1" type="range" min="0" max="100" value={form.probabilidade} onChange={e => set("probabilidade", e.target.value)} />
                 <span className="text-sm font-bold text-indigo-600 w-10 text-right">{form.probabilidade}%</span>
               </div>
+              {fieldErrors.probabilidade && <p className="text-xs text-red-500 mt-1">{fieldErrors.probabilidade}</p>}
             </Field>
             <Field label="Aderência ao Edital (1–5)">
               <select className={selectCls} value={form.aderencia} onChange={e => set("aderencia", e.target.value)}>
@@ -2012,6 +2322,7 @@ function ModalProjet({ project, onClose, onSaved }: {
             </Field>
             <Field label="Score PTI (0–10)" hint="Parecer Técnico Interno">
               <input className={inputCls} type="number" min="0" max="10" step="0.1" value={form.ptScore} onChange={e => set("ptScore", e.target.value)} />
+              {fieldErrors.ptScore && <p className="text-xs text-red-500 mt-1">{fieldErrors.ptScore}</p>}
             </Field>
             <div className="md:col-span-2">
               <Field label="Próximo Passo">
@@ -2045,40 +2356,63 @@ function ModalNovoProje({ onClose, onSaved }: { onClose: () => void; onSaved: ()
 }
 
 // ─── MODAL NOVO DOCUMENTO ──────────────────────────────────────────────────
-function ModalNovoDocumento({ projectId, projectName, projects, onClose, onSaved }: {
-  projectId?: string; projectName?: string; projects?: Project[]; onClose: () => void; onSaved: () => void;
+function ModalNovoDocumento({ projectId, projectName, projects, doc, onClose, onSaved, showToast }: {
+  projectId?: string; projectName?: string; projects?: Project[]; doc?: any; onClose: () => void; onSaved: () => void; showToast?: (msg: string, type?: ToastType) => void;
 }) {
+  const isEdit = !!doc;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [form, setForm] = useState({
-    nome: "", status: "Pendente", validade: "", url: "", projectId: projectId || "",
+    nome: doc?.nome || "",
+    status: doc?.status || "Pendente",
+    validade: doc?.validade ? new Date(doc.validade).toISOString().split("T")[0] : "",
+    url: doc?.url || "",
+    projectId: doc?.projectId || projectId || "",
   });
 
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k: string, v: string) => { setForm(f => ({ ...f, [k]: v })); setFieldErrors(fe => ({ ...fe, [k]: "" })); };
+
+  const validate = (): boolean => {
+    const errs: Record<string, string> = {};
+    if (!form.nome.trim() || form.nome.trim().length < 3) errs.nome = "Nome deve ter pelo menos 3 caracteres";
+    if (form.url.trim() && !form.url.trim().startsWith("http://") && !form.url.trim().startsWith("https://")) errs.url = "URL deve começar com http:// ou https://";
+    if (form.validade && !isEdit && new Date(form.validade) < new Date()) errs.validade = "Validade deve ser data futura";
+    setFieldErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
 
   const handleSubmit = async () => {
-    if (!form.nome) { setError("Nome do documento é obrigatório."); return; }
+    if (!validate()) return;
     setSaving(true);
     setError("");
     try {
-      await apiClient.uploadDocument({
-        nome: form.nome,
+      const payload = {
+        nome: form.nome.trim(),
         status: form.status,
         validade: form.validade || null,
-        url: form.url || null,
+        url: form.url.trim() || null,
         projectId: form.projectId || null,
-      });
+      };
+      if (isEdit) {
+        await apiClient.updateDocument(doc.id, payload);
+        showToast?.("Documento atualizado com sucesso");
+      } else {
+        await apiClient.uploadDocument(payload);
+        showToast?.("Documento criado com sucesso");
+      }
       onSaved();
       onClose();
     } catch (e: any) {
       setError(e.message || "Erro ao salvar documento.");
+      showToast?.(e.message || "Erro ao salvar documento", "error");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <Modal title={`Adicionar Documento${projectName ? ` — ${projectName}` : ""}`} onClose={onClose}>
+    <Modal title={isEdit ? `Editar Documento — ${doc.nome}` : `Adicionar Documento${projectName ? ` — ${projectName}` : ""}`} onClose={onClose}>
       <div className="space-y-4">
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center gap-2">
@@ -2088,6 +2422,7 @@ function ModalNovoDocumento({ projectId, projectName, projects, onClose, onSaved
         <Field label="Nome do Documento" required>
           <input className={inputCls} value={form.nome} onChange={e => set("nome", e.target.value)}
             placeholder="Ex: Estatuto Social, CND Federal, Plano de Trabalho..." />
+          {fieldErrors.nome && <p className="text-xs text-red-500 mt-1">{fieldErrors.nome}</p>}
         </Field>
         <div className="grid grid-cols-2 gap-4">
           <Field label="Status">
@@ -2097,6 +2432,7 @@ function ModalNovoDocumento({ projectId, projectName, projects, onClose, onSaved
           </Field>
           <Field label="Validade (se houver)">
             <input className={inputCls} type="date" value={form.validade} onChange={e => set("validade", e.target.value)} />
+            {fieldErrors.validade && <p className="text-xs text-red-500 mt-1">{fieldErrors.validade}</p>}
           </Field>
         </div>
         <Field label="Link do Documento (Google Drive, OneDrive, Dropbox...)" hint="Cole o link de compartilhamento para acesso direto">
@@ -2105,6 +2441,7 @@ function ModalNovoDocumento({ projectId, projectName, projects, onClose, onSaved
             <input className={cn(inputCls, "pl-10")} type="url" value={form.url} onChange={e => set("url", e.target.value)}
               placeholder="https://drive.google.com/file/..." />
           </div>
+          {fieldErrors.url && <p className="text-xs text-red-500 mt-1">{fieldErrors.url}</p>}
         </Field>
         {!projectId && projects && projects.length > 0 && (
           <Field label="Vincular a um Projeto (opcional)">
@@ -2117,8 +2454,8 @@ function ModalNovoDocumento({ projectId, projectName, projects, onClose, onSaved
         <div className="flex gap-3 pt-2">
           <button onClick={onClose} className="flex-1 py-3 border border-slate-200 rounded-lg text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancelar</button>
           <button onClick={handleSubmit} disabled={saving} className="flex-1 py-3 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {saving ? "Salvando..." : "Adicionar Documento"}
+            {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            {saving ? "Salvando..." : isEdit ? "Atualizar Documento" : "Adicionar Documento"}
           </button>
         </div>
       </div>
@@ -2282,11 +2619,29 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ── Toast state ────────────────────────────────────────────────────────────
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const showToast = (msg: string, type: ToastType = "success") => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    setToasts(prev => [...prev, { id, msg, type }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3500);
+  };
+  const removeToast = (id: string) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  // ── Confirm modal state ────────────────────────────────────────────────────
+  const [confirmModal, setConfirmModal] = useState<{
+    titulo: string; descricao: string; onConfirmar: () => Promise<void>;
+  } | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
   // ── Modais globais ────────────────────────────────────────────────────────
   // null = fechado | false = criar novo | Project = editar existente
   const [modalNovoProj, setModalNovoProj] = useState<Project | false | null>(null);
   const [modalNovoDoc, setModalNovoDoc] = useState<{ projectId?: string; projectName?: string; doc?: any } | null>(null);
   const [modalStatus, setModalStatus] = useState<Project | null>(null);
+
+  // ── Mobile sidebar ─────────────────────────────────────────────────────────
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -2326,7 +2681,9 @@ export default function App() {
       }));
       setAlerts(mappedAlerts);
     } catch (err: any) {
-      setError(err.message || "Erro ao carregar dados");
+      const msg = err.message || "Erro ao carregar dados";
+      setError(msg);
+      showToast(msg, "error");
     } finally {
       setLoading(false);
     }
@@ -2394,10 +2751,11 @@ export default function App() {
             </div>
             <button 
               onClick={logout}
-              className="p-1.5 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
+              className="flex items-center gap-2 p-1.5 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
               title="Sair"
             >
-              <ExternalLink className="w-4 h-4" />
+              <LogOut className="w-4 h-4" />
+              <span className="text-[10px] font-bold uppercase">Sair</span>
             </button>
           </div>
         </div>
@@ -2449,11 +2807,11 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.2 }}
             >
-              {view === "dashboard" && <DashboardView projects={projects} alerts={alerts} onNav={setView} onProject={handleProjectSelect} />}
-              {view === "pipeline" && <PipelineView projects={projects} onProject={handleProjectSelect} onNewProject={() => setModalNovoProj(false)} onEditProject={(p) => setModalNovoProj(p)} />}
-              {view === "editais" && <EditaisView onNewProject={(e) => { setModalNovoProj(false); }} />}
-              {view === "alertas" && <AlertasView alerts={alerts} />}
-              {view === "documentos" && <DocumentosView documents={documents} onNewDoc={() => setModalNovoDoc({})} />}
+              {view === "dashboard" && (loading ? <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">{Array.from({length:4}).map((_,i) => <SkeletonCard key={i} lines={3} />)}</div> : <DashboardView projects={projects} alerts={alerts} onNav={setView} onProject={handleProjectSelect} />)}
+              {view === "pipeline" && (loading ? <div className="space-y-3">{Array.from({length:5}).map((_,i) => <SkeletonCard key={i} lines={2} />)}</div> : <PipelineView projects={projects} onProject={handleProjectSelect} onNewProject={() => setModalNovoProj(false)} onEditProject={(p) => setModalNovoProj(p)} />)}
+              {view === "editais" && <EditaisView onNewProject={(e) => { setModalNovoProj(false); }} showToast={showToast} />}
+              {view === "alertas" && (loading ? <div className="space-y-3">{Array.from({length:3}).map((_,i) => <SkeletonCard key={i} lines={3} />)}</div> : <AlertasView alerts={alerts} showToast={showToast} onRefresh={fetchData} />)}
+              {view === "documentos" && (loading ? <div className="space-y-3">{Array.from({length:3}).map((_,i) => <SkeletonCard key={i} lines={4} />)}</div> : <DocumentosView documents={documents} onNewDoc={() => setModalNovoDoc({})} onEditDoc={(doc) => setModalNovoDoc({ doc })} showToast={showToast} onRefresh={fetchData} />)}
               {view === "memoria" && <MemoriaView projects={projects} stats={stats} auditLogs={auditLogs} />}
               {view === "relatorios" && <RelatoriosView projects={projects} documents={documents} alerts={alerts} auditLogs={auditLogs} />}
               {view === "projeto" && selectedProject && (
@@ -2463,6 +2821,19 @@ export default function App() {
                   onAddDoc={(projectId, projectName) => setModalNovoDoc({ projectId, projectName })}
                   onUpdateStatus={(p) => setModalStatus(p)}
                   onEditProject={(p) => setModalNovoProj(p)}
+                  onDeleteProject={(p) => {
+                    setConfirmModal({
+                      titulo: "Excluir Projeto",
+                      descricao: `Você tem certeza? Esta ação excluirá o projeto "${p.nome}" e todos os dados vinculados (documentos, alertas, metas, etapas).`,
+                      onConfirmar: async () => {
+                        await apiClient.deleteProject(p.id);
+                        showToast("Projeto excluído com sucesso");
+                        handleBack();
+                        fetchData();
+                      },
+                    });
+                  }}
+                  showToast={showToast}
                 />
               )}
             </motion.div>
@@ -2475,6 +2846,7 @@ export default function App() {
         <ModalProjet
           project={modalNovoProj === false ? null : modalNovoProj}
           onClose={() => setModalNovoProj(null)}
+          showToast={showToast}
           onSaved={() => {
             const editedId = modalNovoProj && typeof modalNovoProj === "object" ? (modalNovoProj as Project).id : null;
             setModalNovoProj(null);
@@ -2494,7 +2866,9 @@ export default function App() {
           projectId={modalNovoDoc.projectId}
           projectName={modalNovoDoc.projectName}
           projects={projects}
+          doc={modalNovoDoc.doc}
           onClose={() => setModalNovoDoc(null)}
+          showToast={showToast}
           onSaved={() => { setModalNovoDoc(null); fetchData(); }}
         />
       )}
@@ -2503,10 +2877,10 @@ export default function App() {
           project={modalStatus}
           onClose={() => setModalStatus(null)}
           onSaved={() => {
+            showToast("Status atualizado com sucesso");
             setModalStatus(null);
             fetchData();
             if (selectedProject && selectedProject.id === modalStatus.id) {
-              // refresh selectedProject
               apiClient.getProjects().then(ps => {
                 const updated = ps.find((p: Project) => p.id === modalStatus.id);
                 if (updated) setSelectedProject(updated);
@@ -2515,6 +2889,30 @@ export default function App() {
           }}
         />
       )}
+
+      {/* ── Confirm Modal ── */}
+      {confirmModal && (
+        <ModalConfirmar
+          titulo={confirmModal.titulo}
+          descricao={confirmModal.descricao}
+          loading={confirmLoading}
+          onCancelar={() => setConfirmModal(null)}
+          onConfirmar={async () => {
+            setConfirmLoading(true);
+            try {
+              await confirmModal.onConfirmar();
+              setConfirmModal(null);
+            } catch (e: any) {
+              showToast(e.message || "Erro na operação", "error");
+            } finally {
+              setConfirmLoading(false);
+            }
+          }}
+        />
+      )}
+
+      {/* ── Toast Container ── */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </div>
   );
 }
