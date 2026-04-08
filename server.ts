@@ -463,7 +463,7 @@ async function startServer() {
 
   // Expense Routes — disabled until Meta/Expense/Etapa models are added to schema
   app.post("/api/expenses", authenticate, can("expenses:create"), async (req: any, res: any) => {
-    res.status(501).json({ error: "Módulo de despesas ainda não implementado no schema atual." });
+    res.status(501).json({ error: "Módulo de despesas indisponível: modelos Meta, Expense e Etapa ainda não definidos no schema." });
   });
 
   // Document Routes
