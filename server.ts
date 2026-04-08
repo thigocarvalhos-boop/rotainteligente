@@ -10,37 +10,50 @@ import { prisma } from "./src/lib/prisma";
 import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
 
-// ── Garante que as tabelas existem antes de qualquer coisa ─────────────────
+// ── Diagnóstico de inicialização ─────────────────────────────────────────────
+function logStartupDiagnostics() {
+  const env = process.env.NODE_ENV || "development";
+  const dbConfigured = !!(process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS);
+  const dbSource = process.env.DATABASE_URL ? "DATABASE_URL" : process.env.URL_DO_BANCO_DE_DADOS ? "URL_DO_BANCO_DE_DADOS" : "NÃO CONFIGURADO";
+  const jwtOk = !!process.env.JWT_SECRET;
+  const jwtRefreshOk = !!process.env.JWT_REFRESH_SECRET;
+
+  console.log("┌──────────────────────────────────────────┐");
+  console.log("│         ROTA — Diagnóstico de Boot       │");
+  console.log("├──────────────────────────────────────────┤");
+  console.log(`│ NODE_ENV:        ${env.padEnd(23)}│`);
+  console.log(`│ DB configurado:  ${(dbConfigured ? "SIM" : "NÃO").padEnd(23)}│`);
+  console.log(`│ DB via:          ${dbSource.padEnd(23)}│`);
+  console.log(`│ JWT_SECRET:      ${(jwtOk ? "OK" : "AUSENTE").padEnd(23)}│`);
+  console.log(`│ JWT_REFRESH:     ${(jwtRefreshOk ? "OK" : "AUSENTE").padEnd(23)}│`);
+  console.log("└──────────────────────────────────────────┘");
+}
+
+logStartupDiagnostics();
+
+// ── Garante que o schema do banco está sincronizado ─────────────────────────
 async function ensureDatabase(): Promise<boolean> {
-  console.log("[DB] Verificando banco de dados...");
+  console.log("[DB] Sincronizando schema (prisma db push)...");
   try {
-    await prisma.$queryRaw`SELECT 1 FROM "User" LIMIT 1`;
-    console.log("[DB] Tabelas já existem — ok.");
+    const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
+    execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
+      stdio: "inherit",
+      timeout: 120000,
+      env: { ...process.env },
+    });
+    console.log("[DB] Schema sincronizado com sucesso.");
     return true;
-  } catch (checkErr: any) {
-    // If connection itself fails, report but don't crash
-    if (checkErr?.message?.includes("Can't reach database") ||
-        checkErr?.message?.includes("connect") ||
-        checkErr?.message?.includes("ECONNREFUSED") ||
-        checkErr?.message?.includes("timeout")) {
-      console.error("[DB] Banco indisponível:", checkErr.message);
-      return false;
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (msg.includes("Can't reach database") ||
+        msg.includes("connect") ||
+        msg.includes("ECONNREFUSED") ||
+        msg.includes("timeout")) {
+      console.error("[DB] Banco indisponível:", msg);
+    } else {
+      console.error("[DB] Erro ao sincronizar schema:", msg);
     }
-    console.log("[DB] Tabelas não encontradas. Criando...");
-    try {
-      // Usa o binário local do prisma — funciona com Node.js e Bun
-      const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
-      execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
-        stdio: "inherit",
-        timeout: 120000,
-        env: { ...process.env },
-      });
-      console.log("[DB] Banco criado com sucesso.");
-      return true;
-    } catch (e: any) {
-      console.error("[DB] Erro ao criar banco:", e.message);
-      return false;
-    }
+    return false;
   }
 }
 
