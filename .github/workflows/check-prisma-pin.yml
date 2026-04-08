@@ -1,0 +1,40 @@
+name: Check Prisma Version Pin
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+jobs:
+  check-prisma-pin:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fail if unversioned 'npx prisma generate' is found
+        run: |
+          # Search for 'npx prisma generate' without a pinned version (e.g. @6.4.1)
+          # Allow: npx prisma@6.4.1 generate
+          # Deny:  npx prisma generate
+          #
+          # Exclude: *.md files (documentation), and this workflow file itself
+          if grep -rn "npx prisma generate" \
+               --include="*.json" \
+               --include="*.ts" \
+               --include="*.js" \
+               --include="*.mjs" \
+               --include="*.cjs" \
+               --include="*.sh" \
+               --include="*.toml" \
+               --include="Dockerfile*" \
+               .; then
+            echo ""
+            echo "❌ ERROR: Found 'npx prisma generate' without a pinned version."
+            echo "   This installs Prisma v7 and breaks the schema."
+            echo "   Use 'npx prisma@6.4.1 generate' instead."
+            exit 1
+          fi
+          echo "✅ No unversioned 'npx prisma generate' found."
