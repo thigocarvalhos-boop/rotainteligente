@@ -56,8 +56,15 @@ declare global {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = process.env.JWT_SECRET || "rota-dev-secret-key-2026";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "rota-dev-refresh-key-2026";
+const isProduction = process.env.NODE_ENV === "production";
+
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? "" : "rota-dev-secret-key-2026");
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (isProduction ? "" : "rota-dev-refresh-key-2026");
+
+if (isProduction && (!JWT_SECRET || !JWT_REFRESH_SECRET)) {
+  console.error("[FATAL] JWT_SECRET e JWT_REFRESH_SECRET são obrigatórios em produção.");
+  process.exit(1);
+}
 
 if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
   console.warn("AVISO: JWT_SECRET ou JWT_REFRESH_SECRET não configurados. Usando chaves de desenvolvimento.");
@@ -111,7 +118,7 @@ async function startServer() {
 
   // Seed Initial Data — roda em todos os ambientes via upsert (seguro repetir)
   const seedData = async (): Promise<boolean> => {
-    const dbUrl = process.env.DATABASE_URL;
+    const dbUrl = process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS;
     if (!dbUrl) {
       console.error("ERRO: DATABASE_URL não configurada.");
       return false;
@@ -233,7 +240,7 @@ async function startServer() {
   }
 
   // Verificar expiração de documentos a cada hora
-  const dbUrl = process.env.DATABASE_URL;
+  const dbUrl = process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS;
   if (dbUrl) {
     try {
       await alertService.checkDocumentExpirations();
@@ -833,7 +840,8 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`ROTA Production-Ready Server running on http://localhost:${PORT}`);
+    const host = isProduction ? "0.0.0.0" : "localhost";
+    console.log(`ROTA Server running on http://${host}:${PORT} [${process.env.NODE_ENV || "development"}]`);
   });
 }
 
