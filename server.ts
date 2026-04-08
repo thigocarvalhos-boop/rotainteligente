@@ -254,8 +254,18 @@ async function startServer() {
   };
 
   // API Routes
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  app.get("/api/health", async (req, res) => {
+    const result: any = { status: "ok", timestamp: new Date().toISOString() };
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      result.database = "connected";
+      const userCount = await prisma.user.count();
+      result.users = userCount;
+    } catch (e: any) {
+      result.database = "error";
+      result.dbError = e?.message;
+    }
+    res.json(result);
   });
 
   // Auth Endpoint
@@ -298,7 +308,8 @@ async function startServer() {
         refreshToken,
         user: { id: user.id, name: user.name, email: user.email, role: user.role }
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error("[LOGIN ERROR]", error?.message || error);
       res.status(500).json({ error: "Erro interno no servidor" });
     }
   });
