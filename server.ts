@@ -393,7 +393,11 @@ async function startServer() {
     const { id } = req.params;
     const { status, justificativa } = req.body;
     
-    const allowedStatus = ["Triagem", "Inscrito", "Em análise", "Aprovado", "Reprovado", "Em execução", "Concluído", "Cancelado"];
+    const allowedStatus = [
+      "Oportunidade", "Triagem", "Elaboração", "Revisão", "Pronto",
+      "Inscrito", "Diligência", "Aprovado", "Não Aprovado",
+      "Captado", "Formalização", "Execução", "Concluído", "Arquivado"
+    ];
     if (!allowedStatus.includes(status)) {
       return res.status(400).json({ error: "Status inválido" });
     }
