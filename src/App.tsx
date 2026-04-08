@@ -2196,7 +2196,7 @@ function ModalProjet({ project, onClose, onSaved, showToast }: {
         ...form,
         status:        form.status as ProjectStatus,
         risco:         form.risco as "Baixo" | "Médio" | "Alto",
-        valor:         parseFloat(form.valor.replace(/\./g, "").replace(",", ".")),
+        valor:         parseFloat(form.valor) || 0,
         probabilidade: parseInt(form.probabilidade),
         aderencia:     parseInt(form.aderencia),
         ptScore:       parseFloat(form.ptScore),

@@ -50,26 +50,8 @@ export const alertService = {
     }
   },
 
-  async checkBudgetOverrun(projectId: string) {
-    const metas = await prisma.meta.findMany({
-      where: { projectId },
-      include: { project: { include: { expenses: true } } },
-    });
-
-    for (const meta of metas) {
-      const metaExpenses = meta.project.expenses.filter(
-        (e) => e.vincMetaId === meta.id && e.status === "VALIDADO"
-      );
-      const totalSpent = metaExpenses.reduce((sum, e) => sum + e.valor, 0);
-      if (totalSpent > meta.budget) {
-        await alertService.create({
-          projectId,
-          titulo: "Orçamento Estourado",
-          mensagem: `Meta "${meta.descricao}" ultrapassou o orçamento. Gasto: R$\u00a0${totalSpent.toLocaleString("pt-BR")}, Limite: R$\u00a0${meta.budget.toLocaleString("pt-BR")}`,
-          nivel: "N4",
-          tipo: "ORCAMENTO",
-        });
-      }
-    }
+  async checkBudgetOverrun(_projectId: string) {
+    // Meta/Expense models not yet in schema — method is a no-op until they are added
+    console.warn("[alertService.checkBudgetOverrun] Meta/Expense models not available in schema. Skipping.");
   },
 };

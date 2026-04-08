@@ -169,7 +169,7 @@ export interface Project {
 }
 
 export interface AlertType {
-  id: string | number;
+  id: string;
   nivel: "N1" | "N2" | "N3" | "N4";
   tipo: string;
   projeto: string;

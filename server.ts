@@ -79,6 +79,25 @@ async function startServer() {
     return sanitized;
   };
 
+  const projectInclude = {
+    responsavel: true,
+    alerts: true,
+    documents: true,
+    complianceChecks: true,
+    auditLogs: { include: { user: true } },
+  };
+
+  const mapProjectResponse = (project: any) => {
+    const { documents, ...rest } = project;
+    return {
+      ...rest,
+      docs: documents ?? [],
+      ptCriterios: Array.isArray(rest.ptCriterios) ? rest.ptCriterios : [],
+      historico: Array.isArray(rest.historico) ? rest.historico : [],
+      changeLog: Array.isArray(rest.changeLog) ? rest.changeLog : [],
+    };
+  };
+
   // Seed Initial Data — roda em todos os ambientes via upsert (seguro repetir)
   const seedData = async () => {
     const dbUrl = process.env.DATABASE_URL;
@@ -305,24 +324,8 @@ async function startServer() {
   // Project Routes
   app.get("/api/projects", authenticate, async (req, res) => {
     try {
-      const projects = await prisma.project.findMany({
-        include: {
-          responsavel: true,
-          alerts: true,
-          documents: true,
-          complianceChecks: true,
-          auditLogs: { include: { user: true } },
-        }
-      });
-      // Map relation names to match frontend interface and ensure non-null arrays for Json fields
-      const mapped = projects.map(({ documents, ...rest }) => ({
-        ...rest,
-        docs: documents,
-        ptCriterios: Array.isArray(rest.ptCriterios) ? rest.ptCriterios : [],
-        historico: Array.isArray(rest.historico) ? rest.historico : [],
-        changeLog: Array.isArray(rest.changeLog) ? rest.changeLog : [],
-      }));
-      res.json(mapped);
+      const projects = await prisma.project.findMany({ include: projectInclude });
+      res.json(projects.map(mapProjectResponse));
     } catch (error) {
       console.error("[GET /api/projects]", error);
       res.status(500).json({ error: "Erro ao buscar projetos" });
@@ -337,7 +340,8 @@ async function startServer() {
           ...sanitizedData,
           responsavelId: req.user.id,
           status: sanitizedData.status || "Triagem"
-        }
+        },
+        include: projectInclude
       });
 
       await auditService.log({
@@ -349,7 +353,7 @@ async function startServer() {
         depois: project
       });
 
-      res.status(201).json(project);
+      res.status(201).json(mapProjectResponse(project));
     } catch (error) {
       console.error("[POST /api/projects]", error);
       res.status(400).json({ error: "Erro ao criar projeto" });
@@ -365,7 +369,8 @@ async function startServer() {
       const sanitizedData = sanitizeProjectData(req.body);
       const updated = await prisma.project.update({
         where: { id },
-        data: sanitizedData
+        data: sanitizedData,
+        include: projectInclude
       });
 
       await auditService.log({
@@ -378,7 +383,7 @@ async function startServer() {
         depois: updated
       });
 
-      res.json(updated);
+      res.json(mapProjectResponse(updated));
     } catch (error) {
       res.status(400).json({ error: "Erro ao atualizar projeto" });
     }
@@ -413,7 +418,8 @@ async function startServer() {
         data: {
           status,
           changeLog: [...currentLog, logEntry]
-        }
+        },
+        include: projectInclude
       });
 
       await auditService.log({
@@ -426,7 +432,7 @@ async function startServer() {
         depois: { status: updated.status, logEntry }
       });
 
-      res.json(updated);
+      res.json(mapProjectResponse(updated));
     } catch (error) {
       res.status(400).json({ error: "Erro ao atualizar status" });
     }
@@ -455,89 +461,9 @@ async function startServer() {
     }
   });
 
-  // Expense Routes with Anti-glosa
+  // Expense Routes — disabled until Meta/Expense/Etapa models are added to schema
   app.post("/api/expenses", authenticate, can("expenses:create"), async (req: any, res: any) => {
-    const { projectId, descricao, valor, vincMetaId, vincEtapaId, cotacoes, data, categoria } = req.body;
-    
-    try {
-      // 1. Basic Validation
-      if (!vincMetaId || !vincEtapaId) {
-        return res.status(400).json({ error: "Vínculo com Meta e Etapa é obrigatório para evitar glosa." });
-      }
-
-      // 2. Economicity Check
-      if (valor > 1000 && (!cotacoes || cotacoes.length < 3)) {
-        return res.status(400).json({ 
-          error: "Despesas acima de R$ 1.000,00 exigem no mínimo 3 cotações para conformidade institucional.",
-          actionRequired: "Anexar cotações faltantes"
-        });
-      }
-
-      // 3. Budget Validation
-      const meta = await prisma.meta.findUnique({ where: { id: vincMetaId } });
-      if (!meta) return res.status(404).json({ error: "Meta não encontrada" });
-
-      const existingExpenses = await prisma.expense.findMany({
-        where: { vincMetaId, status: "VALIDADO" }
-      });
-      const totalSpent = existingExpenses.reduce((sum, e) => sum + e.valor, 0);
-
-      if (totalSpent + valor > meta.budget) {
-        await alertService.create({
-          projectId,
-          titulo: "Tentativa de Estouro de Orçamento",
-          mensagem: `Tentativa de lançar despesa de R$ ${valor} na meta ${meta.descricao} (Saldo: R$ ${meta.budget - totalSpent})`,
-          nivel: "N4",
-          tipo: "ORCAMENTO"
-        });
-        return res.status(400).json({ error: "Saldo insuficiente na meta para esta despesa." });
-      }
-
-      // 4. Schedule Validation
-      const etapa = await prisma.etapa.findUnique({ where: { id: vincEtapaId } });
-      if (!etapa) return res.status(404).json({ error: "Etapa não encontrada" });
-      
-      const expenseDate = new Date(data);
-      if (expenseDate < etapa.inicio || expenseDate > etapa.fim) {
-        return res.status(400).json({ error: "Data da despesa fora do cronograma da etapa vinculada." });
-      }
-
-      // 5. Persistence
-      const expense = await prisma.expense.create({
-        data: {
-          projectId,
-          descricao,
-          valor,
-          data: expenseDate,
-          categoria,
-          status: "VALIDADO",
-          vincMetaId,
-          vincEtapaId,
-          cotacoes: {
-            create: cotacoes?.map((c: any) => ({
-              fornecedor: c.fornecedor,
-              valor: c.valor,
-              data: new Date(c.data),
-              vencedora: c.vencedora,
-              docUrl: c.docUrl
-            }))
-          }
-        }
-      });
-
-      await auditService.log({
-        userId: req.user.id,
-        projectId,
-        acao: "CREATE",
-        entidade: "Expense",
-        entidadeId: expense.id,
-        depois: expense
-      });
-
-      res.status(201).json(expense);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao processar despesa" });
-    }
+    res.status(501).json({ error: "Módulo de despesas ainda não implementado no schema atual." });
   });
 
   // Document Routes
