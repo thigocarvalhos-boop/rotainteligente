@@ -100,15 +100,15 @@ async function main() {
   }
   ok("Projeto vinculado");
 
-  // ── DB Push ────────────────────────────────────────────────────────────────
-  inf("Criando tabelas no banco (aguarde até 60s)...");
+  // ── DB Migrate Deploy ────────────────────────────────────────────────────
+  inf("Aplicando migrations no banco (aguarde até 60s)...");
   for (let i = 1; i <= 3; i++) {
-    const r = run("railway run npx prisma db push --accept-data-loss", 180000);
-    if (r.ok || (r.out + r.err).includes("in sync") || (r.out + r.err).includes("migrations")) {
-      ok("Tabelas criadas com sucesso"); break;
+    const r = run("railway run npx prisma@6.4.1 migrate deploy", 180000);
+    if (r.ok || (r.out + r.err).includes("in sync") || (r.out + r.err).includes("migrations") || (r.out + r.err).includes("applied")) {
+      ok("Migrations aplicadas com sucesso"); break;
     }
     if (i < 3) { inf(`Tentativa ${i} falhou, aguardando 20s...`); await new Promise(r => setTimeout(r, 20000)); }
-    else { err("DB push falhou 3x. Verifique se o Postgres está On-line no Railway."); process.exit(1); }
+    else { err("Migrate deploy falhou 3x. Verifique se o Postgres está On-line no Railway."); process.exit(1); }
   }
 
   // ── Seed ───────────────────────────────────────────────────────────────────

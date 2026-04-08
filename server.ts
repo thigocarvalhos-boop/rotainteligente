@@ -33,25 +33,51 @@ logStartupDiagnostics();
 
 // ── Garante que o schema do banco está sincronizado ─────────────────────────
 async function ensureDatabase(): Promise<boolean> {
-  console.log("[DB] Sincronizando schema (prisma db push)...");
+  const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
+
+  // 1. Tenta aplicar migrations pendentes
+  console.log("[DB] Aplicando migrations (prisma migrate deploy)...");
   try {
-    const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
-    execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
+    execFileSync(prismaBin, ["migrate", "deploy"], {
       stdio: "inherit",
       timeout: 120000,
       env: { ...process.env },
     });
-    console.log("[DB] Schema sincronizado com sucesso.");
+    console.log("[DB] Migrations aplicadas com sucesso.");
     return true;
   } catch (e: any) {
     const msg = e?.message || String(e);
+
+    // Se o banco já possuía as tabelas (criadas via db push), faz baseline
+    if (msg.includes("already exists") || msg.includes("already been applied") || msg.includes("migration_not_found")) {
+      console.warn("[DB] Baseline detectado — marcando migration inicial como aplicada...");
+      try {
+        const fs = await import("fs");
+        const migrationsDir = path.join(process.cwd(), "prisma", "migrations");
+        const dirs = fs.readdirSync(migrationsDir).filter(
+          (d: string) => d !== "migration_lock.toml" && fs.statSync(path.join(migrationsDir, d)).isDirectory()
+        );
+        for (const dir of dirs) {
+          execFileSync(prismaBin, ["migrate", "resolve", "--applied", dir], {
+            stdio: "inherit",
+            timeout: 30000,
+            env: { ...process.env },
+          });
+        }
+        console.log("[DB] Baseline concluído com sucesso.");
+        return true;
+      } catch (resolveErr: any) {
+        console.error("[DB] Erro ao fazer baseline:", resolveErr?.message || String(resolveErr));
+      }
+    }
+
     if (msg.includes("Can't reach database") ||
         msg.includes("connect") ||
         msg.includes("ECONNREFUSED") ||
         msg.includes("timeout")) {
       console.error("[DB] Banco indisponível:", msg);
     } else {
-      console.error("[DB] Erro ao sincronizar schema:", msg);
+      console.error("[DB] Erro ao aplicar migrations:", msg);
     }
     return false;
   }
