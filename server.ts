@@ -364,7 +364,8 @@ async function startServer() {
                         error?.message?.includes("connect") ||
                         error?.message?.includes("ECONNREFUSED") ||
                         error?.message?.includes("timeout") ||
-                        error?.code === "P1001" || error?.code === "P1002";
+                        error?.code === "P1001" || // Can't reach database server
+                        error?.code === "P1002";   // Database server timed out
       if (isDbError) {
         res.status(503).json({ error: "Banco de dados temporariamente indisponível. Tente novamente em instantes." });
       } else {
