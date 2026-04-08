@@ -10,27 +10,54 @@ import { prisma } from "./src/lib/prisma";
 import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
 
-async function ensureDatabase(): Promise<void> {
-  console.log("[DB] Verificando banco de dados...");
+// ── Diagnóstico de inicialização ─────────────────────────────────────────────
+function logStartupDiagnostics() {
+  const env = process.env.NODE_ENV || "development";
+  const dbConfigured = !!(process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS);
+  const dbSource = process.env.DATABASE_URL ? "DATABASE_URL" : process.env.URL_DO_BANCO_DE_DADOS ? "URL_DO_BANCO_DE_DADOS" : "NÃO CONFIGURADO";
+  const jwtOk = !!process.env.JWT_SECRET;
+  const jwtRefreshOk = !!process.env.JWT_REFRESH_SECRET;
+
+  console.log("┌──────────────────────────────────────────┐");
+  console.log("│         ROTA — Diagnóstico de Boot       │");
+  console.log("├──────────────────────────────────────────┤");
+  console.log(`│ NODE_ENV:        ${env.padEnd(23)}│`);
+  console.log(`│ DB configurado:  ${(dbConfigured ? "SIM" : "NÃO").padEnd(23)}│`);
+  console.log(`│ DB via:          ${dbSource.padEnd(23)}│`);
+  console.log(`│ JWT_SECRET:      ${(jwtOk ? "OK" : "AUSENTE").padEnd(23)}│`);
+  console.log(`│ JWT_REFRESH:     ${(jwtRefreshOk ? "OK" : "AUSENTE").padEnd(23)}│`);
+  console.log("└──────────────────────────────────────────┘");
+}
+
+logStartupDiagnostics();
+
+// ── Garante que o schema do banco está sincronizado ─────────────────────────
+async function ensureDatabase(): Promise<boolean> {
+  console.log("[DB] Sincronizando schema (prisma db push)...");
   try {
-    await prisma.$queryRaw`SELECT 1 FROM "User" LIMIT 1`;
-    console.log("[DB] Tabelas já existem — ok.");
-  } catch {
-    console.log("[DB] Tabelas não encontradas. Criando...");
-    try {
-      const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
-      execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
-        stdio: "inherit",
-        timeout: 120000,
-        env: { ...process.env },
-      });
-      console.log("[DB] Banco criado com sucesso.");
-    } catch (e: any) {
-      console.error("[DB] Erro ao criar banco:", e.message);
+    const prismaBin = path.join(process.cwd(), "node_modules", ".bin", "prisma");
+    execFileSync(prismaBin, ["db", "push", "--accept-data-loss"], {
+      stdio: "inherit",
+      timeout: 120000,
+      env: { ...process.env },
+    });
+    console.log("[DB] Schema sincronizado com sucesso.");
+    return true;
+  } catch (e: any) {
+    const msg = e?.message || String(e);
+    if (msg.includes("Can't reach database") ||
+        msg.includes("connect") ||
+        msg.includes("ECONNREFUSED") ||
+        msg.includes("timeout")) {
+      console.error("[DB] Banco indisponível:", msg);
+    } else {
+      console.error("[DB] Erro ao sincronizar schema:", msg);
     }
+    return false;
   }
 }
 
+// Extend Express Request type
 declare global {
   namespace Express {
     interface Request {
@@ -42,8 +69,15 @@ declare global {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const JWT_SECRET = process.env.JWT_SECRET || "rota-dev-secret-key-2026";
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || "rota-dev-refresh-key-2026";
+const isProduction = process.env.NODE_ENV === "production";
+
+const JWT_SECRET = process.env.JWT_SECRET || (isProduction ? "" : "rota-dev-secret-key-2026");
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || (isProduction ? "" : "rota-dev-refresh-key-2026");
+
+if (isProduction && (!JWT_SECRET || !JWT_REFRESH_SECRET)) {
+  console.error("[FATAL] JWT_SECRET e JWT_REFRESH_SECRET são obrigatórios em produção.");
+  process.exit(1);
+}
 
 if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
   console.warn("AVISO: JWT_SECRET ou JWT_REFRESH_SECRET não configurados. Usando chaves de desenvolvimento.");
@@ -88,14 +122,15 @@ async function startServer() {
       const adminEmail = "admin@guiasocial.org";
       const hashedPassword = await bcrypt.hash("admin123", 12);
 
+      // upsert: cria se não existe, mantém se já existe
       const admin = await prisma.user.upsert({
         where: { email: adminEmail },
         update: {},
         create: {
           email: adminEmail,
-          password: hashedPassword,
+          passwordHash: hashedPassword,
           name: "Administrador ROTA",
-          role: "SUPER_ADMIN"
+          role: "ADMIN"
         }
       });
 
@@ -116,7 +151,6 @@ async function startServer() {
         const project = await prisma.project.create({
           data: {
             nome: "Guia Digital Teen 2026",
-            edital: "FMCA/COMDICA",
             financiador: "Fundo Municipal da Criança",
             area: "Digital",
             valor: 320000,
@@ -130,26 +164,6 @@ async function startServer() {
             publico: "Adolescentes 12–18 anos",
             competitividade: "Alta",
             proximoPasso: "Aguardar resultado do edital",
-            ptScore: 8,
-            metas: {
-              create: [
-                { descricao: "Certificar jovens em tecnologia", indicador: "Jovens certificados", meta: 500, alcancado: 380, unidade: "Jovens", budget: 150000 },
-                { descricao: "Inserção no mercado de trabalho", indicador: "Jovens empregados", meta: 50, alcancado: 12, unidade: "Jovens", budget: 100000 }
-              ]
-            },
-            etapas: {
-              create: [
-                { nome: "Mobilização", inicio: new Date("2026-01-01"), fim: new Date("2026-02-28"), status: "Concluído", peso: 20 },
-                { nome: "Execução das Aulas", inicio: new Date("2026-03-01"), fim: new Date("2026-07-31"), status: "Em curso", peso: 60 }
-              ]
-            },
-            docs: {
-              create: [
-                { nome: "Estatuto Social", status: "Aprovado", validade: null },
-                { nome: "CNPJ", status: "Aprovado", validade: null },
-                { nome: "CND Federal", status: "Aprovado", validade: new Date("2026-05-20") }
-              ]
-            }
           }
         });
 
@@ -178,11 +192,45 @@ async function startServer() {
       console.error("[Seed] Stack:", error?.stack);
     }
   };
+  // Garante tabelas antes do seed — com tolerância a banco indisponível
+  const dbReady = await ensureDatabase();
+  let seedDone = false;
+  if (dbReady) {
+    seedDone = await seedData();
+  } else {
+    console.warn("[STARTUP] Banco indisponível no boot. O servidor iniciará e tentará reconectar.");
+  }
 
-  await ensureDatabase();
-  await seedData();
+  // Retry seed em background se falhou no boot (DB temporariamente indisponível)
+  if (!seedDone) {
+    const retrySeed = async (attempt: number, maxAttempts: number) => {
+      if (attempt > maxAttempts) {
+        console.error(`[SEED RETRY] Desistindo após ${maxAttempts} tentativas.`);
+        return;
+      }
+      const delay = Math.min(attempt * 10000, 60000); // 10s, 20s, 30s, ... max 60s
+      console.log(`[SEED RETRY] Tentativa ${attempt}/${maxAttempts} em ${delay / 1000}s...`);
+      setTimeout(async () => {
+        try {
+          const ready = await ensureDatabase();
+          if (ready) {
+            const ok = await seedData();
+            if (ok) {
+              console.log("[SEED RETRY] Seed concluído com sucesso!");
+              return;
+            }
+          }
+          retrySeed(attempt + 1, maxAttempts);
+        } catch {
+          retrySeed(attempt + 1, maxAttempts);
+        }
+      }, delay);
+    };
+    retrySeed(1, 6);
+  }
 
-  const dbUrl = process.env.DATABASE_URL;
+  // Verificar expiração de documentos a cada hora
+  const dbUrl = process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS;
   if (dbUrl) {
     try {
       await alertService.checkDocumentExpirations();
@@ -192,6 +240,8 @@ async function startServer() {
     }
   }
 
+  // CORS — allows browser requests from any origin in development,
+  // tighten ALLOWED_ORIGIN in production via env var
   app.use((req: any, res: any, next: any) => {
     const origin = process.env.ALLOWED_ORIGIN || "*";
     res.setHeader("Access-Control-Allow-Origin", origin);
@@ -203,11 +253,13 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Logging Middleware
   app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     next();
   });
 
+  // Auth Middleware
   const authenticate = (req: any, res: any, next: any) => {
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) return res.status(401).json({ error: "Acesso negado" });
@@ -220,15 +272,16 @@ async function startServer() {
     }
   };
 
+  // RBAC Middleware
   const PERMISSIONS: Record<string, string[]> = {
-    "expenses:create":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "FINANCEIRO"],
-    "documents:create":  ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "DOCUMENTAL"],
-    "audit-logs:read":   ["SUPER_ADMIN", "DIRETORIA", "MONITORAMENTO"],
-    "alerts:read":       ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO", "FINANCEIRO", "ELABORADOR"],
-    "projects:create":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
-    "projects:update":   ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
-    "projects:delete":   ["SUPER_ADMIN", "DIRETORIA"],
-    "stats:read":        ["SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO"],
+    "expenses:create":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "FINANCEIRO"],
+    "documents:create":  ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "DOCUMENTAL"],
+    "audit-logs:read":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "MONITORAMENTO"],
+    "alerts:read":       ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO", "FINANCEIRO", "ELABORADOR"],
+    "projects:create":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
+    "projects:update":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO"],
+    "projects:delete":   ["ADMIN", "SUPER_ADMIN", "DIRETORIA"],
+    "stats:read":        ["ADMIN", "SUPER_ADMIN", "DIRETORIA", "COORDENACAO", "MONITORAMENTO"],
   };
 
   const can = (permission: string) => (req: any, res: any, next: any) => {
@@ -243,10 +296,25 @@ async function startServer() {
     next();
   };
 
-  app.get("/api/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  // API Routes
+  app.get("/api/health", async (req, res) => {
+    const result: any = { status: "ok", timestamp: new Date().toISOString() };
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      result.database = "connected";
+      const userCount = await prisma.user.count();
+      result.users = userCount;
+      const hasAdmin = await prisma.user.findUnique({ where: { email: "admin@guiasocial.org" }, select: { id: true } });
+      result.adminSeeded = !!hasAdmin;
+    } catch (e: any) {
+      result.status = "degraded";
+      result.database = "error";
+      result.dbError = e?.message;
+    }
+    res.json(result);
   });
 
+  // Auth Endpoint
   app.post("/api/auth/login", [
     body("email").isEmail(),
     body("password").isLength({ min: 6 })
@@ -255,11 +323,12 @@ async function startServer() {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { email, password } = req.body;
+    
     try {
       const user = await prisma.user.findUnique({ where: { email } });
       if (!user) return res.status(401).json({ error: "Credenciais inválidas" });
 
-      const validPassword = await bcrypt.compare(password, user.password);
+      const validPassword = await bcrypt.compare(password, user.passwordHash);
       if (!validPassword) return res.status(401).json({ error: "Credenciais inválidas" });
 
       const accessToken = jwt.sign(
@@ -272,7 +341,7 @@ async function startServer() {
         JWT_REFRESH_SECRET,
         { expiresIn: "7d" }
       );
-
+      
       await auditService.log({
         userId: user.id,
         acao: "LOGIN",
@@ -285,8 +354,20 @@ async function startServer() {
         refreshToken,
         user: { id: user.id, name: user.name, email: user.email, role: user.role }
       });
-    } catch (error) {
-      res.status(500).json({ error: "Erro interno no servidor" });
+    } catch (error: any) {
+      console.error("[LOGIN ERROR]", error?.message || error);
+      // Distinguish DB connectivity errors from other internal errors
+      const isDbError = error?.message?.includes("Can't reach database") ||
+                        error?.message?.includes("connect") ||
+                        error?.message?.includes("ECONNREFUSED") ||
+                        error?.message?.includes("timeout") ||
+                        error?.code === "P1001" || // Can't reach database server
+                        error?.code === "P1002";   // Database server timed out
+      if (isDbError) {
+        res.status(503).json({ error: "Banco de dados temporariamente indisponível. Tente novamente em instantes." });
+      } else {
+        res.status(500).json({ error: "Erro interno no servidor" });
+      }
     }
   });
 
@@ -308,20 +389,11 @@ async function startServer() {
     }
   });
 
+  // Project Routes
   app.get("/api/projects", authenticate, async (req, res) => {
     try {
-      const projects = await prisma.project.findMany({
-        include: {
-          responsavel: true,
-          alerts: true,
-          metas: true,
-          etapas: true,
-          docs: true,
-          expenses: { include: { cotacoes: true } },
-          compliance: true
-        }
-      });
-      res.json(projects);
+      const projects = await prisma.project.findMany({ include: projectInclude });
+      res.json(projects.map(mapProjectResponse));
     } catch (error) {
       console.error("[GET /api/projects]", error);
       res.status(500).json({ error: "Erro ao buscar projetos" });
@@ -336,7 +408,8 @@ async function startServer() {
           ...sanitizedData,
           responsavelId: req.user.id,
           status: sanitizedData.status || "Triagem"
-        }
+        },
+        include: projectInclude
       });
 
       await auditService.log({
@@ -348,7 +421,7 @@ async function startServer() {
         depois: project
       });
 
-      res.status(201).json(project);
+      res.status(201).json(mapProjectResponse(project));
     } catch (error) {
       console.error("[POST /api/projects]", error);
       res.status(400).json({ error: "Erro ao criar projeto" });
@@ -364,7 +437,8 @@ async function startServer() {
       const sanitizedData = sanitizeProjectData(req.body);
       const updated = await prisma.project.update({
         where: { id },
-        data: sanitizedData
+        data: sanitizedData,
+        include: projectInclude
       });
 
       await auditService.log({
@@ -377,7 +451,7 @@ async function startServer() {
         depois: updated
       });
 
-      res.json(updated);
+      res.json(mapProjectResponse(updated));
     } catch (error) {
       res.status(400).json({ error: "Erro ao atualizar projeto" });
     }
@@ -386,8 +460,12 @@ async function startServer() {
   app.patch("/api/projects/:id/status", authenticate, can("projects:update"), async (req: any, res: any) => {
     const { id } = req.params;
     const { status, justificativa } = req.body;
-
-    const allowedStatus = ["Triagem", "Inscrito", "Em análise", "Aprovado", "Reprovado", "Em execução", "Concluído", "Cancelado"];
+    
+    const allowedStatus = [
+      "Oportunidade", "Triagem", "Elaboração", "Revisão", "Pronto",
+      "Inscrito", "Diligência", "Aprovado", "Não Aprovado",
+      "Captado", "Formalização", "Execução", "Concluído", "Arquivado"
+    ];
     if (!allowedStatus.includes(status)) {
       return res.status(400).json({ error: "Status inválido" });
     }
@@ -409,7 +487,11 @@ async function startServer() {
       const currentLog = Array.isArray(existing.changeLog) ? existing.changeLog : [];
       const updated = await prisma.project.update({
         where: { id },
-        data: { status, changeLog: [...currentLog, logEntry] }
+        data: {
+          status,
+          changeLog: [...currentLog, logEntry]
+        },
+        include: projectInclude
       });
 
       await auditService.log({
@@ -422,7 +504,7 @@ async function startServer() {
         depois: { status: updated.status, logEntry }
       });
 
-      res.json(updated);
+      res.json(mapProjectResponse(updated));
     } catch (error) {
       res.status(400).json({ error: "Erro ao atualizar status" });
     }
@@ -451,81 +533,12 @@ async function startServer() {
     }
   });
 
+  // Expense Routes — disabled until Meta/Expense/Etapa models are added to schema
   app.post("/api/expenses", authenticate, can("expenses:create"), async (req: any, res: any) => {
-    const { projectId, descricao, valor, vincMetaId, vincEtapaId, cotacoes, data, categoria } = req.body;
-
-    try {
-      if (!vincMetaId || !vincEtapaId) {
-        return res.status(400).json({ error: "Vínculo com Meta e Etapa é obrigatório para evitar glosa." });
-      }
-
-      if (valor > 1000 && (!cotacoes || cotacoes.length < 3)) {
-        return res.status(400).json({
-          error: "Despesas acima de R$ 1.000,00 exigem no mínimo 3 cotações.",
-          actionRequired: "Anexar cotações faltantes"
-        });
-      }
-
-      const meta = await prisma.meta.findUnique({ where: { id: vincMetaId } });
-      if (!meta) return res.status(404).json({ error: "Meta não encontrada" });
-
-      const existingExpenses = await prisma.expense.findMany({
-        where: { vincMetaId, status: "VALIDADO" }
-      });
-      const totalSpent = existingExpenses.reduce((sum, e) => sum + e.valor, 0);
-
-      if (totalSpent + valor > meta.budget) {
-        await alertService.create({
-          projectId,
-          titulo: "Tentativa de Estouro de Orçamento",
-          mensagem: `Tentativa de lançar despesa de R$ ${valor} na meta ${meta.descricao} (Saldo: R$ ${meta.budget - totalSpent})`,
-          nivel: "N4",
-          tipo: "ORCAMENTO"
-        });
-        return res.status(400).json({ error: "Saldo insuficiente na meta para esta despesa." });
-      }
-
-      const etapa = await prisma.etapa.findUnique({ where: { id: vincEtapaId } });
-      if (!etapa) return res.status(404).json({ error: "Etapa não encontrada" });
-
-      const expenseDate = new Date(data);
-      if (expenseDate < etapa.inicio || expenseDate > etapa.fim) {
-        return res.status(400).json({ error: "Data da despesa fora do cronograma da etapa vinculada." });
-      }
-
-      const expense = await prisma.expense.create({
-        data: {
-          projectId, descricao, valor,
-          data: expenseDate, categoria,
-          status: "VALIDADO",
-          vincMetaId, vincEtapaId,
-          cotacoes: {
-            create: cotacoes?.map((c: any) => ({
-              fornecedor: c.fornecedor,
-              valor: c.valor,
-              data: new Date(c.data),
-              vencedora: c.vencedora,
-              docUrl: c.docUrl
-            }))
-          }
-        }
-      });
-
-      await auditService.log({
-        userId: req.user.id,
-        projectId,
-        acao: "CREATE",
-        entidade: "Expense",
-        entidadeId: expense.id,
-        depois: expense
-      });
-
-      res.status(201).json(expense);
-    } catch (error) {
-      res.status(500).json({ error: "Erro ao processar despesa" });
-    }
+    res.status(501).json({ error: "Módulo de despesas indisponível: modelos Meta, Expense e Etapa ainda não definidos no schema." });
   });
 
+  // Document Routes
   app.post("/api/documents", authenticate, can("documents:create"), async (req: any, res: any) => {
     const { projectId, nome, validade, url } = req.body;
     try {
@@ -554,6 +567,7 @@ async function startServer() {
     }
   });
 
+  // Alerts Route
   app.get("/api/alerts", authenticate, can("alerts:read"), async (req: any, res: any) => {
     try {
       const isAdmin = ["SUPER_ADMIN", "DIRETORIA"].includes(req.user.role);
@@ -600,39 +614,224 @@ async function startServer() {
     }
   });
 
+  // Audit Logs Route
   app.get("/api/audit-logs", authenticate, can("audit-logs:read"), async (req, res) => {
-    const logs = await prisma.auditLog.findMany({
-      include: { user: true, project: true },
-      orderBy: { data: "desc" },
-      take: 50
-    });
-    res.json(logs);
+    try {
+      const logs = await prisma.auditLog.findMany({
+        include: { user: true, project: true },
+        orderBy: { data: "desc" },
+        take: 50
+      });
+      res.json(logs);
+    } catch (error) {
+      console.error("[GET /api/audit-logs]", error);
+      res.status(500).json({ error: "Erro ao buscar logs de auditoria" });
+    }
   });
 
+  // Documents Route
   app.get("/api/documents", authenticate, async (req, res) => {
-    const docs = await prisma.document.findMany({
-      include: { project: true },
-      orderBy: { nome: "asc" }
-    });
-    res.json(docs);
+    try {
+      const docs = await prisma.document.findMany({
+        include: { project: true },
+        orderBy: { nome: "asc" }
+      });
+      res.json(docs);
+    } catch (error) {
+      console.error("[GET /api/documents]", error);
+      res.status(500).json({ error: "Erro ao buscar documentos" });
+    }
   });
 
+  app.patch("/api/documents/:id", authenticate, can("documents:create"), async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.document.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Documento não encontrado" });
+
+      const { nome, status, validade, url, projectId } = req.body;
+      const updated = await prisma.document.update({
+        where: { id },
+        data: {
+          ...(nome !== undefined && { nome }),
+          ...(status !== undefined && { status }),
+          ...(validade !== undefined && { validade: validade ? new Date(validade) : null }),
+          ...(url !== undefined && { url }),
+          ...(projectId !== undefined && { projectId: projectId || null }),
+        },
+      });
+
+      await auditService.log({
+        userId: req.user.id,
+        projectId: updated.projectId || undefined,
+        acao: "UPDATE",
+        entidade: "Document",
+        entidadeId: id,
+        antes: existing,
+        depois: updated,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("[PATCH /api/documents/:id]", error);
+      res.status(400).json({ error: "Erro ao atualizar documento" });
+    }
+  });
+
+  app.delete("/api/documents/:id", authenticate, can("documents:create"), async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.document.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Documento não encontrado" });
+
+      await prisma.document.delete({ where: { id } });
+
+      await auditService.log({
+        userId: req.user.id,
+        projectId: existing.projectId || undefined,
+        acao: "DELETE",
+        entidade: "Document",
+        entidadeId: id,
+        antes: existing,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("[DELETE /api/documents/:id]", error);
+      res.status(500).json({ error: "Erro ao deletar documento" });
+    }
+  });
+
+  // ── Editais CRUD ─────────────────────────────────────────────────────────
+  const editalAllowlist = [
+    "nome", "financiador", "valorMax", "prazo", "status",
+    "aderencia", "categoria", "linha", "porte", "link", "observacao", "area"
+  ];
+
+  const sanitizeEditalData = (body: any) => {
+    const sanitized: any = {};
+    editalAllowlist.forEach(field => {
+      if (body[field] !== undefined) {
+        if (field === "prazo" && body[field]) {
+          sanitized[field] = new Date(body[field]);
+        } else if (field === "valorMax") {
+          sanitized[field] = parseFloat(body[field]) || 0;
+        } else if (field === "aderencia") {
+          sanitized[field] = parseInt(body[field]) || 3;
+        } else {
+          sanitized[field] = body[field];
+        }
+      }
+    });
+    return sanitized;
+  };
+
+  app.get("/api/editais", authenticate, async (req, res) => {
+    try {
+      const editais = await prisma.edital.findMany({ orderBy: { createdAt: "desc" } });
+      res.json(editais);
+    } catch (error) {
+      console.error("[GET /api/editais]", error);
+      res.status(500).json({ error: "Erro ao buscar editais" });
+    }
+  });
+
+  app.post("/api/editais", authenticate, async (req: any, res: any) => {
+    try {
+      const { nome, financiador } = req.body;
+      if (!nome || !financiador) {
+        return res.status(400).json({ error: "Nome e financiador são obrigatórios" });
+      }
+      const sanitized = sanitizeEditalData(req.body);
+      const edital = await prisma.edital.create({ data: sanitized });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "CREATE",
+        entidade: "Edital",
+        entidadeId: edital.id,
+        depois: edital,
+      });
+
+      res.status(201).json(edital);
+    } catch (error) {
+      console.error("[POST /api/editais]", error);
+      res.status(400).json({ error: "Erro ao criar edital" });
+    }
+  });
+
+  app.patch("/api/editais/:id", authenticate, async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.edital.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Edital não encontrado" });
+
+      const sanitized = sanitizeEditalData(req.body);
+      const updated = await prisma.edital.update({ where: { id }, data: sanitized });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "UPDATE",
+        entidade: "Edital",
+        entidadeId: id,
+        antes: existing,
+        depois: updated,
+      });
+
+      res.json(updated);
+    } catch (error) {
+      console.error("[PATCH /api/editais/:id]", error);
+      res.status(400).json({ error: "Erro ao atualizar edital" });
+    }
+  });
+
+  app.delete("/api/editais/:id", authenticate, async (req: any, res: any) => {
+    const { id } = req.params;
+    try {
+      const existing = await prisma.edital.findUnique({ where: { id } });
+      if (!existing) return res.status(404).json({ error: "Edital não encontrado" });
+
+      await prisma.edital.delete({ where: { id } });
+
+      await auditService.log({
+        userId: req.user.id,
+        acao: "DELETE",
+        entidade: "Edital",
+        entidadeId: id,
+        antes: existing,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      console.error("[DELETE /api/editais/:id]", error);
+      res.status(500).json({ error: "Erro ao deletar edital" });
+    }
+  });
+
+  // Stats Route
   app.get("/api/stats", authenticate, can("stats:read"), async (req, res) => {
-    const [totalProjects, approvedProjects, totalValue] = await Promise.all([
-      prisma.project.count(),
-      prisma.project.count({ where: { status: "Aprovado" } }),
-      prisma.project.aggregate({ _sum: { valor: true } })
-    ]);
+    try {
+      const [totalProjects, approvedProjects, totalValue] = await Promise.all([
+        prisma.project.count(),
+        prisma.project.count({ where: { status: "Aprovado" } }),
+        prisma.project.aggregate({ _sum: { valor: true } })
+      ]);
 
-    res.json({
-      totalProjects,
-      approvedProjects,
-      totalValue: totalValue._sum.valor || 0,
-      approvalRate: totalProjects > 0 ? (approvedProjects / totalProjects) * 100 : 0
-    });
+      res.json({
+        totalProjects,
+        approvedProjects,
+        totalValue: totalValue._sum.valor ?? 0,
+        approvalRate: totalProjects > 0 ? (approvedProjects / totalProjects) * 100 : 0
+      });
+    } catch (error) {
+      console.error("[GET /api/stats]", error);
+      res.status(500).json({ error: "Erro ao buscar estatísticas" });
+    }
   });
 
+  // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
+
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
@@ -647,7 +846,8 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`ROTA Production-Ready Server running on http://localhost:${PORT}`);
+    const host = isProduction ? "0.0.0.0" : "localhost";
+    console.log(`ROTA Server running on http://${host}:${PORT} [${process.env.NODE_ENV || "development"}]`);
   });
 }
 
