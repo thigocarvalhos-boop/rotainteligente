@@ -23,31 +23,45 @@ export const alertService = {
   },
 
   async checkDocumentExpirations() {
+    console.log("[AlertService] Verificando vencimentos de documentos...");
+    const now = new Date();
     const horizon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
     const docs = await prisma.document.findMany({
       where: {
-        validade: { lte: horizon },
+        validade: { not: null, lte: horizon },
         status: { not: "VENCIDO" },
       },
     });
 
+    console.log(`[AlertService] ${docs.length} documento(s) próximo(s) do vencimento encontrado(s).`);
+
     for (const doc of docs) {
-      const isExpired = doc.validade && doc.validade < new Date();
+      if (!doc.validade) continue;
+
+      const prazo: Date = doc.validade;
+      const isExpired = prazo < now;
+
+      console.log(`[AlertService] Documento "${doc.nome}" — validade: ${prazo.toISOString()} | vencido: ${isExpired}`);
+
       await alertService.create({
         projectId: doc.projectId || undefined,
         titulo: isExpired ? "Documento Vencido" : "Documento a Vencer",
-        mensagem: `O documento "${doc.nome}" ${isExpired ? "venceu" : "vencerá"} em ${doc.validade?.toLocaleDateString("pt-BR")}.`,
+        mensagem: `O documento "${doc.nome}" ${isExpired ? "venceu" : "vencerá"} em ${prazo.toLocaleDateString("pt-BR")}.`,
         nivel: isExpired ? "N4" : "N2",
         tipo: "DOCUMENTO",
-        prazo: doc.validade ?? undefined,
+        prazo,
       });
+
       if (isExpired) {
         await prisma.document.update({
           where: { id: doc.id },
           data: { status: "VENCIDO" },
         });
+        console.log(`[AlertService] Documento "${doc.nome}" marcado como VENCIDO.`);
       }
     }
+
+    console.log("[AlertService] Verificação de vencimentos concluída.");
   },
 
   async checkBudgetOverrun(_projectId: string) {

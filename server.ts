@@ -110,32 +110,13 @@ async function startServer() {
     return sanitized;
   };
 
-  const projectInclude = {
-    responsavel: true,
-    alerts: true,
-    documents: true,
-    complianceChecks: true,
-    auditLogs: { include: { user: true } },
-  };
-
-  const mapProjectResponse = (project: any) => {
-    const { documents, ...rest } = project;
-    return {
-      ...rest,
-      docs: documents ?? [],
-      ptCriterios: Array.isArray(rest.ptCriterios) ? rest.ptCriterios : [],
-      historico: Array.isArray(rest.historico) ? rest.historico : [],
-      changeLog: Array.isArray(rest.changeLog) ? rest.changeLog : [],
-    };
-  };
-
-  // Seed Initial Data — roda em todos os ambientes via upsert (seguro repetir)
-  const seedData = async (): Promise<boolean> => {
-    const dbUrl = process.env.DATABASE_URL || process.env.URL_DO_BANCO_DE_DADOS;
-    if (!dbUrl) {
-      console.error("ERRO: DATABASE_URL não configurada.");
-      return false;
+  const seedData = async () => {
+    if (!process.env.DATABASE_URL) {
+      console.error("[Seed] ERRO: DATABASE_URL não configurada. Seed abortado.");
+      return;
     }
+
+    console.log("[Seed] Iniciando seed de dados...");
 
     try {
       const adminEmail = "admin@guiasocial.org";
@@ -152,10 +133,21 @@ async function startServer() {
           role: "ADMIN"
         }
       });
-      console.log("Seed: Admin user OK —", admin.email);
+
+      if (!admin?.id) {
+        console.error("[Seed] ERRO: Falha ao criar/verificar usuário admin. Seed abortado.");
+        return;
+      }
+      console.log("[Seed] Admin user OK —", admin.email, "| id:", admin.id);
 
       const projectCount = await prisma.project.count();
+      console.log("[Seed] Projetos existentes:", projectCount);
+
       if (projectCount === 0) {
+        console.log("[Seed] Criando projeto inicial...");
+
+        const alertPrazo = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+
         const project = await prisma.project.create({
           data: {
             nome: "Guia Digital Teen 2026",
@@ -175,44 +167,29 @@ async function startServer() {
           }
         });
 
-        // Create documents for the project
-        await prisma.document.createMany({
-          data: [
-            { nome: "Estatuto Social", status: "Aprovado", validade: null, projectId: project.id },
-            { nome: "CNPJ", status: "Aprovado", validade: null, projectId: project.id },
-            { nome: "CND Federal", status: "Aprovado", validade: new Date("2026-05-20"), projectId: project.id }
-          ]
-        });
+        if (!project?.id) {
+          console.error("[Seed] ERRO: Falha ao criar projeto inicial.");
+        } else {
+          console.log("[Seed] Projeto criado — id:", project.id, "| nome:", project.nome);
 
-        await alertService.create({
-          projectId: project.id,
-          titulo: "Documento Vencendo",
-          mensagem: "CND Municipal Recife vence em 15 dias.",
-          nivel: "N4",
-          tipo: "DOCUMENTO",
-          prazo: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000)
-        });
+          await alertService.create({
+            projectId: project.id,
+            titulo: "Documento Vencendo",
+            mensagem: "CND Municipal Recife vence em 15 dias.",
+            nivel: "N4",
+            tipo: "DOCUMENTO",
+            prazo: alertPrazo
+          });
 
-        console.log("Seed: Initial project and alerts created.");
+          console.log("[Seed] Alerta criado — prazo:", alertPrazo.toISOString());
+          console.log("[Seed] Projeto inicial e alertas criados com sucesso.");
+        }
+      } else {
+        console.log("[Seed] Projetos já existem — seed de projeto ignorado.");
       }
-
-      // Seed editais if empty
-      const editalCount = await prisma.edital.count();
-      if (editalCount === 0) {
-        await prisma.edital.createMany({
-          data: [
-            { nome: "Chamamento Público COMDICA 2026", financiador: "Prefeitura do Recife / COMDICA", valorMax: 400000, prazo: new Date("2026-05-15"), status: "Aberto", aderencia: 5, categoria: "Fundo Municipal", linha: "Eixo I — Proteção Básica", porte: "Grande", link: "https://recife.pe.gov.br/comdica", observacao: "Edital recorrente. IGS tem histórico de 100% de aprovação neste financiador." },
-            { nome: "Edital Tecendo Infâncias", financiador: "Fundação Maria Cecilia Souto Vidigal", valorMax: 150000, prazo: new Date("2026-04-24"), status: "Aberto", aderencia: 4, categoria: "Fundação Privada", linha: "Primeira Infância", porte: "Pequeno", link: "https://fmcsv.org.br", observacao: "Exige vídeo de apresentação e portfólio detalhado." },
-            { nome: "BrazilFoundation — Ciclo 2026", financiador: "BrazilFoundation", valorMax: 100000, prazo: new Date("2026-06-30"), status: "Em análise", aderencia: 3, categoria: "Cooperação Internacional", linha: "Educação e Cidadania", porte: "Médio", observacao: "Aguardando publicação do guia do proponente." },
-            { nome: "Edital Itaú Social — Unicef", financiador: "Itaú Social", valorMax: 250000, prazo: new Date("2026-04-10"), status: "Encerrado", aderencia: 5, categoria: "Instituto Privado", linha: "Educação Integral", porte: "Médio", observacao: "IGS não submeteu este ano por conflito de agenda com COMDICA." },
-          ],
-        });
-        console.log("Seed: Initial editais created.");
-      }
-      return true;
-    } catch (error) {
-      console.error("Seed: Erro ao popular dados iniciais. Verifique a conexão com o banco de dados.", error);
-      return false;
+    } catch (error: any) {
+      console.error("[Seed] ERRO ao popular dados iniciais:", error?.message ?? error);
+      console.error("[Seed] Stack:", error?.stack);
     }
   };
   // Garante tabelas antes do seed — com tolerância a banco indisponível
