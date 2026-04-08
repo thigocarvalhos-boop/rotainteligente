@@ -11,12 +11,21 @@ import { auditService } from "./src/services/auditService";
 import { alertService } from "./src/services/alertService";
 
 // ── Garante que as tabelas existem antes de qualquer coisa ─────────────────
-async function ensureDatabase(): Promise<void> {
+async function ensureDatabase(): Promise<boolean> {
   console.log("[DB] Verificando banco de dados...");
   try {
     await prisma.$queryRaw`SELECT 1 FROM "User" LIMIT 1`;
     console.log("[DB] Tabelas já existem — ok.");
-  } catch {
+    return true;
+  } catch (checkErr: any) {
+    // If connection itself fails, report but don't crash
+    if (checkErr?.message?.includes("Can't reach database") ||
+        checkErr?.message?.includes("connect") ||
+        checkErr?.message?.includes("ECONNREFUSED") ||
+        checkErr?.message?.includes("timeout")) {
+      console.error("[DB] Banco indisponível:", checkErr.message);
+      return false;
+    }
     console.log("[DB] Tabelas não encontradas. Criando...");
     try {
       // Usa o binário local do prisma — funciona com Node.js e Bun
@@ -27,8 +36,10 @@ async function ensureDatabase(): Promise<void> {
         env: { ...process.env },
       });
       console.log("[DB] Banco criado com sucesso.");
+      return true;
     } catch (e: any) {
       console.error("[DB] Erro ao criar banco:", e.message);
+      return false;
     }
   }
 }
@@ -99,11 +110,11 @@ async function startServer() {
   };
 
   // Seed Initial Data — roda em todos os ambientes via upsert (seguro repetir)
-  const seedData = async () => {
+  const seedData = async (): Promise<boolean> => {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
       console.error("ERRO: DATABASE_URL não configurada.");
-      return;
+      return false;
     }
 
     try {
@@ -178,13 +189,48 @@ async function startServer() {
         });
         console.log("Seed: Initial editais created.");
       }
+      return true;
     } catch (error) {
       console.error("Seed: Erro ao popular dados iniciais. Verifique a conexão com o banco de dados.", error);
+      return false;
     }
   };
-  // Garante tabelas antes do seed
-  await ensureDatabase();
-  await seedData();
+  // Garante tabelas antes do seed — com tolerância a banco indisponível
+  const dbReady = await ensureDatabase();
+  let seedDone = false;
+  if (dbReady) {
+    seedDone = await seedData();
+  } else {
+    console.warn("[STARTUP] Banco indisponível no boot. O servidor iniciará e tentará reconectar.");
+  }
+
+  // Retry seed em background se falhou no boot (DB temporariamente indisponível)
+  if (!seedDone) {
+    const retrySeed = async (attempt: number, maxAttempts: number) => {
+      if (attempt > maxAttempts) {
+        console.error(`[SEED RETRY] Desistindo após ${maxAttempts} tentativas.`);
+        return;
+      }
+      const delay = Math.min(attempt * 10000, 60000); // 10s, 20s, 30s, ... max 60s
+      console.log(`[SEED RETRY] Tentativa ${attempt}/${maxAttempts} em ${delay / 1000}s...`);
+      setTimeout(async () => {
+        try {
+          const ready = await ensureDatabase();
+          if (ready) {
+            const ok = await seedData();
+            if (ok) {
+              console.log("[SEED RETRY] Seed concluído com sucesso!");
+              return;
+            }
+          }
+          retrySeed(attempt + 1, maxAttempts);
+        } catch {
+          retrySeed(attempt + 1, maxAttempts);
+        }
+      }, delay);
+    };
+    retrySeed(1, 6);
+  }
 
   // Verificar expiração de documentos a cada hora
   const dbUrl = process.env.DATABASE_URL;
@@ -261,7 +307,10 @@ async function startServer() {
       result.database = "connected";
       const userCount = await prisma.user.count();
       result.users = userCount;
+      const hasAdmin = await prisma.user.findUnique({ where: { email: "admin@guiasocial.org" }, select: { id: true } });
+      result.adminSeeded = !!hasAdmin;
     } catch (e: any) {
+      result.status = "degraded";
       result.database = "error";
       result.dbError = e?.message;
     }
@@ -310,7 +359,17 @@ async function startServer() {
       });
     } catch (error: any) {
       console.error("[LOGIN ERROR]", error?.message || error);
-      res.status(500).json({ error: "Erro interno no servidor" });
+      // Distinguish DB connectivity errors from other internal errors
+      const isDbError = error?.message?.includes("Can't reach database") ||
+                        error?.message?.includes("connect") ||
+                        error?.message?.includes("ECONNREFUSED") ||
+                        error?.message?.includes("timeout") ||
+                        error?.code === "P1001" || error?.code === "P1002";
+      if (isDbError) {
+        res.status(503).json({ error: "Banco de dados temporariamente indisponível. Tente novamente em instantes." });
+      } else {
+        res.status(500).json({ error: "Erro interno no servidor" });
+      }
     }
   });
 
