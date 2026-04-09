@@ -10,12 +10,44 @@ View your app in AI Studio: https://ai.studio/apps/e42020b4-20c9-44cf-b4b3-a6f87
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js ≥ 20
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-deploy ok
+   ```bash
+   npm install
+   ```
+2. Copy the example environment file and fill in your values:
+   ```bash
+   cp .env.example .env
+   # Edit .env and set DATABASE_URL, JWT_SECRET, JWT_REFRESH_SECRET
+   ```
+3. Generate the Prisma Client (always use the pinned version):
+   ```bash
+   npx prisma@6.4.1 generate
+   ```
+4. Apply database migrations:
+   ```bash
+   npx prisma@6.4.1 migrate deploy
+   ```
+5. Run the app:
+   ```bash
+   npm run dev
+   ```
+
+> ⚠️ **Important:** Never run `npx prisma generate` (without a version). That command installs Prisma v7, which is incompatible with this project's schema. Always use `npx prisma@6.4.1 generate`.
+
+## Deploy (Vercel)
+
+The `vercel.json` configures Vercel to run `npm run build` as the build command, which executes:
+
+```bash
+npx prisma@6.4.1 generate
+npx prisma@6.4.1 migrate deploy
+vite build
+```
+
+Ensure the following environment variables are set in your Vercel project settings:
+
+- `DATABASE_URL` — PostgreSQL connection string
+- `JWT_SECRET` — Secret key for JWT signing
+- `JWT_REFRESH_SECRET` — Secret key for JWT refresh token signing
