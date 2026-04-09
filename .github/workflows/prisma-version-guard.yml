@@ -1,0 +1,54 @@
+name: Prisma Version Guard
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  check-prisma-version:
+    name: Ensure pinned prisma@6.4.1 (never bare npx prisma generate)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Block bare "npx prisma generate"
+        run: |
+          # "npx prisma generate" is NOT a substring of "npx prisma@6.4.1 generate",
+          # so this pattern safely matches only the bare (unversioned) form.
+          if grep -rn "npx prisma generate" \
+               --exclude-dir=node_modules \
+               --exclude-dir=.git \
+               --exclude-dir=dist \
+               --include="*.json" \
+               --include="*.toml" \
+               --include="*.yml" \
+               --include="*.yaml" \
+               --include="*.sh" \
+               --include="*.ts" \
+               --include="*.js" \
+               --include="*.md" \
+               --include="Dockerfile" \
+               . 2>/dev/null; then
+            echo ""
+            echo "❌ ERROR: Found 'npx prisma generate' without version pin."
+            echo "   Use 'npx prisma@6.4.1 generate' instead."
+            echo "   Bare 'npx prisma generate' installs Prisma 7 and breaks the schema."
+            exit 1
+          fi
+          echo "✅ No bare 'npx prisma generate' found. Prisma version is pinned correctly."
+
+      - name: Verify build script uses pinned prisma@6.4.1
+        run: |
+          if ! grep -q "prisma@6.4.1 generate" package.json; then
+            echo "❌ ERROR: build script must contain 'prisma@6.4.1 generate'."
+            exit 1
+          fi
+          if ! grep -q "prisma@6.4.1 migrate deploy" package.json; then
+            echo "❌ ERROR: build script must contain 'prisma@6.4.1 migrate deploy'."
+            exit 1
+          fi
+          echo "✅ package.json build script correctly uses npx prisma@6.4.1 generate and migrate deploy."
